@@ -211,7 +211,7 @@ ditto "${APP_BUNDLE}" "${DMG_STAGING}/LabForge.app"
 ln -s /Applications "${DMG_STAGING}/Applications"
 
 rm -f "${DMG_PATH}"
-if diskutil image create from --help >/dev/null 2>&1; then
+if diskutil image create from --help 2>&1 | grep -q -- '--volumeName'; then
   diskutil image create from --volumeName "LabForge" --format UDZO "${DMG_STAGING}" "${DMG_PATH}" >/dev/null
 else
   hdiutil create -volname "LabForge" -srcfolder "${DMG_STAGING}" -ov -format UDZO "${DMG_PATH}" >/dev/null

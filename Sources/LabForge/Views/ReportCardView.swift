@@ -27,6 +27,15 @@ struct ReportCardSnapshot {
     /// Oldest first, 14 entries, 0...4.
     var recentLevels: [Int]
     var isActive: Bool
+    var researcherName: String = LabSettings.defaultResearcherName
+    /// Trimmed; empty when unset.
+    var labName: String = ""
+    /// Trimmed; empty when unset.
+    var researchFocus: String = ""
+    var weeklySeconds: TimeInterval = 0
+    var weeklyTargetSeconds: TimeInterval = 0
+
+    var weeklyProgress: Double { weeklyTargetSeconds > 0 ? min(weeklySeconds / weeklyTargetSeconds, 1) : 0 }
 
     var targetProgress: Double { targetSeconds > 0 ? min(todaySeconds / targetSeconds, 1) : 0 }
 }
@@ -44,22 +53,23 @@ struct ReportCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-                .padding(.bottom, 22)
+                .padding(.bottom, 16)
             headline
-                .padding(.bottom, 24)
+                .padding(.bottom, 18)
             metrics
-                .padding(.bottom, 20)
+                .padding(.bottom, 14)
             progress
-                .padding(.bottom, 20)
+                .padding(.bottom, 14)
             activityStrip
-                .padding(.bottom, 22)
+                .padding(.bottom, 16)
             journal
             Spacer(minLength: 16)
             quote
-                .padding(.bottom, 20)
-            footer
+                .padding(.bottom, 14)
+            footer.layoutPriority(1)
         }
-        .padding(40)
+        .padding(.horizontal, 40)
+        .padding(.vertical, 32)
         .frame(width: Self.size.width, height: Self.size.height, alignment: .topLeading)
         .background(p.canvas)
     }
@@ -71,12 +81,22 @@ struct ReportCardView: View {
             HStack(alignment: .center) {
                 HStack(spacing: 8) {
                     LabForgeMarkView(size: 16, color: p.primary)
-                    Text("LABFORGE · 研铸日报")
+                    Text("LABFORGE · 科研日报")
                         .font(.system(size: 11, weight: .medium))
                         .tracking(1.8)
                         .foregroundStyle(p.ink)
                 }
-                Spacer()
+                if !snapshot.labName.isEmpty {
+                    Text("·")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(p.muted)
+                    Text(snapshot.labName)
+                        .font(.system(size: 11, weight: .regular, design: .serif))
+                        .foregroundStyle(p.muted)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                Spacer(minLength: 12)
                 Text(issueDate)
                     .font(.system(size: 11, weight: .medium).monospacedDigit())
                     .tracking(1.2)
@@ -87,12 +107,20 @@ struct ReportCardView: View {
                 Text("NO. \(String(format: "%03d", max(snapshot.totalActiveDays, 1)))")
                     .font(.system(size: 10.5, weight: .medium).monospacedDigit())
                     .tracking(1.5)
-                    .foregroundStyle(p.mutedSoft)
-                Spacer()
+                    .foregroundStyle(p.muted)
+                if !snapshot.researchFocus.isEmpty {
+                    Text(snapshot.researchFocus)
+                        .font(.system(size: 10.5, weight: .regular, design: .serif))
+                        .foregroundStyle(p.muted)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.leading, 10)
+                }
+                Spacer(minLength: 12)
                 Text(weekdayText)
                     .font(.system(size: 10.5, weight: .medium))
                     .tracking(1.5)
-                    .foregroundStyle(p.mutedSoft)
+                    .foregroundStyle(p.muted)
             }
         }
     }
@@ -150,7 +178,7 @@ struct ReportCardView: View {
                     .foregroundStyle(p.ink)
                 Text(unit)
                     .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(p.mutedSoft)
+                    .foregroundStyle(p.muted)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -166,6 +194,14 @@ struct ReportCardView: View {
                 Text("\(Int((snapshot.targetProgress * 100).rounded()))% · 目标 \(DurationFormatter.shortHours(snapshot.targetSeconds))")
                     .font(.system(size: 11, weight: .medium).monospacedDigit())
                     .foregroundStyle(p.body)
+                if snapshot.weeklyTargetSeconds > 0 {
+                    Text("本周 \(String(format: "%.1f", snapshot.weeklySeconds / 3600)) / \(String(format: "%.0f", snapshot.weeklyTargetSeconds / 3600))h")
+                        .font(.system(size: 11, weight: .regular).monospacedDigit())
+                        .foregroundStyle(p.muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .padding(.leading, 10)
+                }
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -208,12 +244,12 @@ struct ReportCardView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(p.primary)
+                .foregroundStyle(p.ink)
             Text(text)
                 .font(.system(size: 13, weight: .regular))
                 .lineSpacing(3)
                 .foregroundStyle(p.body)
-                .lineLimit(4)
+                .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
@@ -228,7 +264,7 @@ struct ReportCardView: View {
                 .tracking(-0.3)
                 .lineSpacing(3)
                 .foregroundStyle(p.ink)
-                .lineLimit(3)
+                .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
             Text("—— \(snapshot.quote.author)")
                 .font(.system(size: 11, weight: .regular))
@@ -240,13 +276,16 @@ struct ReportCardView: View {
         VStack(spacing: 10) {
             Rectangle().fill(p.hairline).frame(height: 1)
             HStack {
-                Text("Forged in LabForge 研铸")
+                Text("\(snapshot.researcherName) · Forged in LabForge")
                     .font(.system(size: 12, weight: .regular, design: .serif))
                     .foregroundStyle(p.body)
-                Spacer()
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 12)
                 Text("最长连胜 \(snapshot.longestStreak) 天 · 活跃 \(snapshot.totalActiveDays) 天")
                     .font(.system(size: 10.5, weight: .regular).monospacedDigit())
-                    .foregroundStyle(p.mutedSoft)
+                    .foregroundStyle(p.muted)
+                    .fixedSize()
             }
         }
     }
@@ -356,6 +395,9 @@ struct ReportPreviewSheet: View {
             snapshot = viewModel.makeReportSnapshot()
             variant = viewModel.isEffectivelyDark ? .dark : .light
         }
+        .onChange(of: viewModel.effectiveResearcherName) { _, name in snapshot?.researcherName = name }
+        .onChange(of: viewModel.trimmedLabName) { _, lab in snapshot?.labName = lab }
+        .onChange(of: viewModel.trimmedResearchFocus) { _, focus in snapshot?.researchFocus = focus }
     }
 
     private func perform(_ action: (ReportCardSnapshot) throws -> String?) {

@@ -13,14 +13,14 @@ import Testing
         let list = BadgeEngine.evaluate(sessions: [], dailyGoals: [:], now: now, calendar: cal)
         #expect(list.map(\.id) == BadgeID.allCases)
         #expect(list.count == 9)
-        #expect(list.allSatisfy { !$0.isUnlocked && $0.progress == 0 && $0.unlockedDate == nil && !$0.title.isEmpty })
+        #expect(list.allSatisfy { !$0.isUnlocked && $0.progress == 0.0 && $0.unlockedDate == nil && !$0.title.isEmpty })
         #expect(list.map(\.title) == ["初入研途", "早鸟进组", "连续 7 天", "连续 30 天", "深夜奋战", "单日 8 小时", "百小时达人", "五百小时传说", "日理万机"])
     }
 
     @Test func firstSpark() {
         let s = session(d(2026, 6, 1, 14), d(2026, 6, 1, 15))
         let b = badges([s])[.firstSpark]!
-        #expect(b.isUnlocked && b.progress == 1 && b.unlockedDate == s.startTime)
+        #expect(b.isUnlocked && b.progress == 1.0 && b.unlockedDate == s.startTime)
     }
 
     @Test(arguments: [

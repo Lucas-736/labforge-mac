@@ -52,9 +52,11 @@ private struct SidebarView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 LabForgeWordmark(markSize: 22, fontSize: 21)
-                Text("科研打卡 · 时长铸造")
+                Text(viewModel.trimmedLabName.isEmpty ? "科研打卡 · 时长铸造" : viewModel.trimmedLabName)
                     .font(ClaudeTypography.caption)
                     .foregroundStyle(ClaudePalette.mutedSoft)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .padding(.leading, 30)
             }
             .padding(.top, 28)
@@ -73,6 +75,8 @@ private struct SidebarView: View {
             Spacer()
 
             VStack(alignment: .leading, spacing: 12) {
+                ResearcherProfileBadge()
+
                 HStack(spacing: 8) {
                     StatusDot(active: viewModel.isActive)
                     Text(viewModel.isActive
@@ -107,6 +111,60 @@ private struct SidebarView: View {
         }
         .frame(maxHeight: .infinity)
         .background(ClaudePalette.surfaceSoft)
+    }
+}
+
+/// Compact clickable researcher badge; opens the quick profile editor popover.
+private struct ResearcherProfileBadge: View {
+    @Environment(LabForgeViewModel.self) private var viewModel
+    @State private var isEditing = false
+    @State private var isHovered = false
+
+    var body: some View {
+        @Bindable var vm = viewModel
+        Button {
+            isEditing = true
+        } label: {
+            HStack(spacing: 10) {
+                ResearcherMonogram(name: viewModel.effectiveResearcherName, size: 30)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(viewModel.effectiveResearcherName)
+                        .font(ClaudeTypography.titleSM)
+                        .foregroundStyle(ClaudePalette.ink)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Text(viewModel.rankProgress.currentRank.title)
+                        .font(ClaudeTypography.caption)
+                        .foregroundStyle(ClaudePalette.muted)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "pencil")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(isHovered ? ClaudePalette.ink : ClaudePalette.mutedSoft)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: ClaudeRadius.md, style: .continuous)
+                    .fill(isHovered || isEditing ? ClaudePalette.surfaceCard : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: ClaudeRadius.md, style: .continuous)
+                    .strokeBorder(ClaudePalette.hairline, lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .onHover { isHovered = $0 }
+        .help("编辑研究者档案")
+        .accessibilityLabel("研究者 \(viewModel.effectiveResearcherName)，编辑资料")
+        .popover(isPresented: $isEditing, arrowEdge: .trailing) {
+            QuickProfileEditorPopover(researcherName: $vm.researcherName, labName: $vm.labName,
+                                      researchFocus: $vm.researchFocus) { isEditing = false }
+                .preferredColorScheme(viewModel.preferredColorScheme)
+        }
     }
 }
 

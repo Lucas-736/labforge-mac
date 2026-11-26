@@ -4,6 +4,7 @@ import SwiftUI
 struct HistoryView: View {
     @Environment(LabForgeViewModel.self) private var viewModel
     @State private var query = ""
+    @State private var categoryFilter: SessionCategory?
     @State private var editorMode: SessionEditorSheet.Mode?
     @State private var pendingDelete: LabSession?
 
@@ -14,19 +15,32 @@ struct HistoryView: View {
             VStack(alignment: .leading, spacing: 24) {
                 ClaudePageHeader(eyebrow: "Lab Journal", title: "历史记录",
                                  subtitle: "按天整理的每一段实验。忘记打卡？可以手动补上。") {
-                    Button {
-                        editorMode = .create
-                    } label: {
-                        Label("手动补卡", systemImage: "plus")
+                    HStack(spacing: 10) {
+                        Button {
+                            viewModel.exportCSVBackup()
+                        } label: {
+                            Label("导出 CSV", systemImage: "tablecells")
+                        }
+                        .buttonStyle(ClaudeSecondaryButtonStyle())
+                        .help("导出全部记录为 Excel / Numbers 可读的 CSV 表格")
+                        Button {
+                            editorMode = .create(initialDate: nil)
+                        } label: {
+                            Label("手动补卡", systemImage: "plus")
+                        }
+                        .buttonStyle(ClaudePrimaryButtonStyle())
                     }
-                    .buttonStyle(ClaudePrimaryButtonStyle())
                 }
 
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(ClaudePalette.mutedSoft)
-                    TextField("搜索目标、日志或日期（如 2026-11）", text: $query)
-                        .claudeTextField()
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(ClaudePalette.mutedSoft)
+                        TextField("搜索目标、日志或日期（如 2026-11）", text: $query)
+                            .claudeTextField()
+                    }
+                    categoryFilterRow
+                        .padding(.leading, 26)
                 }
 
                 if summaries.isEmpty {
@@ -45,8 +59,10 @@ struct HistoryView: View {
             .padding(.vertical, 32)
             .frame(maxWidth: 1100, alignment: .leading)
         }
+        .onAppear(perform: consumeBackfill)
+        .onChange(of: viewModel.pendingBackfillDate) { _, _ in consumeBackfill() }
         .sheet(item: $editorMode) { mode in
-            SessionEditorSheet(mode: mode)
+            SessionEditorSheet(mode: mode, initialCategory: viewModel.activeCategory)
                 .environment(viewModel)
                 .preferredColorScheme(viewModel.preferredColorScheme)
         }
@@ -59,14 +75,52 @@ struct HistoryView: View {
         }
     }
 
+    private func consumeBackfill() {
+        guard let date = viewModel.consumePendingBackfill() else { return }
+        editorMode = .create(initialDate: date)
+    }
+
+    private var categoryFilterRow: some View {
+        ClaudeFlowLayout(spacing: 6, lineSpacing: 6) {
+            filterPill(title: "全部", tone: nil, isSelected: categoryFilter == nil) { categoryFilter = nil }
+            ForEach(SessionCategory.allCases) { category in
+                filterPill(title: category.title, tone: ClaudePalette.category(category),
+                           isSelected: categoryFilter == category) {
+                    categoryFilter = categoryFilter == category ? nil : category
+                }
+            }
+        }
+    }
+
+    private func filterPill(title: String, tone: Color?, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if let tone {
+                    Circle().fill(tone).frame(width: 6, height: 6)
+                }
+                Text(title)
+                    .font(ClaudeTypography.caption)
+                    .foregroundStyle(isSelected ? ClaudePalette.ink : ClaudePalette.muted)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            .background(Capsule().fill(isSelected ? ClaudePalette.surfaceCard : Color.clear))
+            .overlay(Capsule().strokeBorder(isSelected ? ClaudePalette.hairline : ClaudePalette.hairlineSoft, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
     private var emptyState: some View {
         VStack(spacing: 12) {
             LabForgeMarkView(size: 30, color: ClaudePalette.mutedSoft)
-            Text(query.isEmpty ? "还没有任何记录" : "没有匹配「\(query)」的记录")
+            Text(emptyTitle)
                 .font(ClaudeTypography.serif(20))
                 .tracking(-0.3)
                 .foregroundStyle(ClaudePalette.ink)
-            Text(query.isEmpty ? "第一次打卡之后，这里会变成你的实验年鉴。" : "试试其他关键词或日期。")
+            Text(isFiltering ? "试试其他关键词、日期或分类。" : "第一次打卡之后，这里会变成你的实验年鉴。")
                 .font(ClaudeTypography.bodySM)
                 .foregroundStyle(ClaudePalette.muted)
         }
@@ -75,14 +129,44 @@ struct HistoryView: View {
         .claudeCard(.card)
     }
 
+    private var isFiltering: Bool {
+        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || categoryFilter != nil
+    }
+
+    private var emptyTitle: String {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !q.isEmpty { return "没有匹配「\(q)」的记录" }
+        if let categoryFilter { return "还没有「\(categoryFilter.title)」分类的记录" }
+        return "还没有任何记录"
+    }
+
     private func filtered(_ summaries: [DailySummary]) -> [DailySummary] {
+        let byCategory = categoryFilter.map { filter(summaries, by: $0) } ?? summaries
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return summaries }
-        return summaries.filter { s in
+        guard !q.isEmpty else { return byCategory }
+        return byCategory.filter { s in
             s.dateKey.contains(q)
                 || s.goal.lowercased().contains(q)
                 || LabForgeViewModel.chineseDate(s.date).contains(q)
                 || s.sessions.contains { $0.goal.lowercased().contains(q) || $0.notes.lowercased().contains(q) }
+        }
+    }
+
+    /// Keeps only sessions of `category`, recomputing each day's total; drops empty days.
+    private func filter(_ summaries: [DailySummary], by category: SessionCategory) -> [DailySummary] {
+        summaries.compactMap { summary in
+            let sessions = summary.sessions.filter { $0.category == category }
+            guard !sessions.isEmpty else { return nil }
+            let seconds = sessions.reduce(0.0) { total, session in
+                total + CalendarDayHelper.daySegments(for: session, now: viewModel.now, calendar: viewModel.calendar)
+                    .filter { $0.dateKey == summary.dateKey }
+                    .reduce(0.0) { $0 + $1.seconds }
+            }
+            var copy = summary
+            copy.sessions = sessions
+            copy.sessionCount = sessions.count
+            copy.totalSeconds = seconds
+            return copy
         }
     }
 }
@@ -152,6 +236,7 @@ private struct SessionRow: View {
                         .font(ClaudeTypography.titleSM)
                         .foregroundStyle(session.goal.isEmpty ? ClaudePalette.mutedSoft : ClaudePalette.ink)
                         .lineLimit(1)
+                    CategoryTagPill(category: session.category, compact: true)
                     if session.isManualEntry { ClaudeBadgePill(text: "补卡", style: .outline) }
                     if session.isActive { ClaudeBadgePill(text: "进行中", style: .coral) }
                 }
@@ -180,12 +265,13 @@ private struct SessionRow: View {
 
 struct SessionEditorSheet: View {
     enum Mode: Identifiable {
-        case create
+        /// `initialDate` pre-populates start / end on that calendar day (heatmap click-to-backfill).
+        case create(initialDate: Date?)
         case edit(LabSession)
 
         var id: String {
             switch self {
-            case .create: return "create"
+            case .create(let date): return "create-\(date.map { String($0.timeIntervalSince1970) } ?? "now")"
             case .edit(let s): return s.id.uuidString
             }
         }
@@ -199,25 +285,48 @@ struct SessionEditorSheet: View {
     @State private var end: Date
     @State private var goal: String
     @State private var notes: String
+    @State private var category: SessionCategory
     @State private var errorText: String?
 
-    init(mode: Mode) {
+    init(mode: Mode, initialDate: Date? = nil, initialCategory: SessionCategory = .default) {
         self.mode = mode
         switch mode {
-        case .create:
-            let now = Date()
-            let cal = Calendar.current
-            let defaultEnd = cal.date(bySetting: .second, value: 0, of: now) ?? now
-            _start = State(initialValue: defaultEnd.addingTimeInterval(-2 * 3600))
-            _end = State(initialValue: defaultEnd)
+        case .create(let modeDate):
+            let range = Self.defaultRange(on: modeDate ?? initialDate)
+            _start = State(initialValue: range.start)
+            _end = State(initialValue: range.end)
             _goal = State(initialValue: "")
             _notes = State(initialValue: "")
+            _category = State(initialValue: initialCategory)
         case .edit(let s):
             _start = State(initialValue: s.startTime)
             _end = State(initialValue: s.endTime ?? Date())
             _goal = State(initialValue: s.goal)
             _notes = State(initialValue: s.notes)
+            _category = State(initialValue: s.category)
         }
+    }
+
+    /// Two hours ending now or 09:00–11:00 on a past day selected in the heatmap.
+    static func defaultRange(on day: Date?, now: Date = Date(), calendar: Calendar = .current) -> (start: Date, end: Date) {
+        let roundedNow = calendar.dateInterval(of: .minute, for: now)?.start ?? now
+        let fallback = (start: roundedNow.addingTimeInterval(-2 * 3600), end: roundedNow)
+        guard let day, let interval = calendar.dateInterval(of: .day, for: day) else { return fallback }
+        if interval.contains(now), now < interval.end {
+            let end = roundedNow > interval.start ? roundedNow : now
+            guard end > interval.start else { return fallback }
+            return (max(interval.start, end.addingTimeInterval(-2 * 3600)), end)
+        }
+        guard interval.end <= now,
+              let start = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: day),
+              let end = calendar.date(bySettingHour: 11, minute: 0, second: 0, of: day),
+              start >= interval.start, end < interval.end, start < end else { return fallback }
+        return (start, end)
+    }
+
+    private var initialDayText: String? {
+        if case .create(let date?) = mode { return LabForgeViewModel.chineseDate(date) }
+        return nil
     }
 
     private var isActiveSession: Bool {
@@ -234,6 +343,19 @@ struct SessionEditorSheet: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(modeEyebrow).claudeEyebrow(ClaudePalette.primary)
                 Text(modeTitle).claudeDisplay(26).foregroundStyle(ClaudePalette.ink)
+                if let initialDayText {
+                    Text("从热力图选择：\(initialDayText)")
+                        .font(ClaudeTypography.bodySM)
+                        .foregroundStyle(ClaudePalette.muted)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("分类").font(ClaudeTypography.caption).foregroundStyle(ClaudePalette.muted)
+                ViewThatFits(in: .horizontal) {
+                    CategorySelectorStrip(selection: $category)
+                    CategorySelectorStrip(selection: $category, compact: true)
+                }
             }
 
             VStack(alignment: .leading, spacing: 14) {
@@ -289,7 +411,7 @@ struct SessionEditorSheet: View {
             }
         }
         .padding(28)
-        .frame(width: 460)
+        .frame(width: 540)
         .background(ClaudePalette.canvas)
         .onChange(of: start) { _, _ in errorText = nil }
         .onChange(of: end) { _, _ in errorText = nil }
@@ -325,9 +447,10 @@ struct SessionEditorSheet: View {
         do {
             switch mode {
             case .create:
-                try viewModel.addManualSession(start: start, end: end, goal: goal, notes: notes)
+                try viewModel.addManualSession(start: start, end: end, goal: goal, notes: notes, category: category)
             case .edit(let s):
-                try viewModel.updateSession(id: s.id, start: start, end: s.isActive ? nil : end, goal: goal, notes: notes)
+                try viewModel.updateSession(id: s.id, start: start, end: s.isActive ? nil : end, goal: goal, notes: notes,
+                                            category: category)
             }
             dismiss()
         } catch {

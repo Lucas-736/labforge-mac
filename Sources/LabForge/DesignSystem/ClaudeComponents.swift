@@ -1,3 +1,4 @@
+import LabForgeCore
 import SwiftUI
 
 // MARK: - Spacing & radii (DESIGN.md)
@@ -77,9 +78,6 @@ struct LabForgeWordmark: View {
             Text("LabForge")
                 .claudeDisplay(fontSize, tracking: -0.4)
                 .foregroundStyle(color)
-            Text("研铸")
-                .font(ClaudeTypography.serif(fontSize * 0.72))
-                .foregroundStyle(ClaudePalette.muted)
         }
     }
 }
@@ -520,5 +518,296 @@ struct ClaudeStatTile: View {
             }
         }
         .claudeCard(.card, padding: 20)
+    }
+}
+
+// MARK: - Session categories
+
+/// Calm editorial category pill: 6pt warm dot + title on a soft surface with a hairline border.
+struct CategoryTagPill: View {
+    let category: SessionCategory
+    var compact = false
+
+    var body: some View {
+        HStack(spacing: compact ? 5 : 6) {
+            Circle()
+                .fill(ClaudePalette.category(category))
+                .frame(width: 6, height: 6)
+            Text(category.title)
+                .font(compact ? .system(size: 11, weight: .medium) : ClaudeTypography.caption)
+                .foregroundStyle(ClaudePalette.body)
+        }
+        .lineLimit(1)
+        .fixedSize()
+        .padding(.horizontal, compact ? 8 : 10)
+        .padding(.vertical, compact ? 2.5 : 4)
+        .background(Capsule().fill(ClaudePalette.surfaceSoft))
+        .overlay(Capsule().strokeBorder(ClaudePalette.hairline, lineWidth: 1))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("分类：\(category.title)")
+    }
+}
+
+/// Horizontal row of warm selectable category pills (`category-tab` / `category-tab-active`).
+/// `compact` renders icon-only pills (title in the tooltip) for the menu bar popover.
+struct CategorySelectorStrip: View {
+    @Binding var selection: SessionCategory
+    var compact = false
+
+    var body: some View {
+        HStack(spacing: compact ? 6 : 8) {
+            ForEach(SessionCategory.allCases) { category in
+                pill(category)
+            }
+        }
+    }
+
+    private func pill(_ category: SessionCategory) -> some View {
+        let isSelected = selection == category
+        let tone = ClaudePalette.category(category)
+        let shape = RoundedRectangle(cornerRadius: ClaudeRadius.md, style: .continuous)
+        return Button {
+            selection = category
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: category.symbolName)
+                    .font(.system(size: compact ? 11.5 : 11, weight: .medium))
+                    .foregroundStyle(compact ? (isSelected ? ClaudePalette.accentForeground : ClaudePalette.muted)
+                                             : (isSelected ? tone : ClaudePalette.muted))
+                if !compact {
+                    Text(category.title)
+                        .font(ClaudeTypography.caption)
+                        .foregroundStyle(isSelected ? ClaudePalette.ink : ClaudePalette.muted)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .padding(.horizontal, compact ? 0 : 10)
+            .frame(maxWidth: compact ? .infinity : nil, minHeight: compact ? 28 : 30)
+            .background(shape.fill(isSelected ? ClaudePalette.surfaceCard : Color.clear))
+            .overlay(shape.strokeBorder(isSelected ? ClaudePalette.hairline : ClaudePalette.hairlineSoft, lineWidth: 1))
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .help(category.title)
+        .accessibilityLabel(category.title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .animation(.easeOut(duration: 0.15), value: isSelected)
+    }
+}
+
+// MARK: - Suggestion pills
+
+/// Quiet one-click suggestion pill (recent goals).
+struct SuggestionPill: View {
+    let text: String
+    var systemImage = "arrow.uturn.left"
+    var maxWidth: CGFloat = 220
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(ClaudePalette.mutedSoft)
+                Text(text)
+                    .font(ClaudeTypography.caption)
+                    .foregroundStyle(ClaudePalette.body)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .frame(maxWidth: maxWidth, alignment: .leading)
+            .fixedSize(horizontal: true, vertical: false)
+            .background(Capsule().fill(ClaudePalette.surfaceSoft))
+            .overlay(Capsule().strokeBorder(ClaudePalette.hairline, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .help("使用「\(text)」")
+    }
+}
+
+// MARK: - Researcher profile
+
+/// Terracotta monogram circle built from the first character of a name.
+struct ResearcherMonogram: View {
+    let name: String
+    var size: CGFloat = 30
+
+    var body: some View {
+        Text(initial)
+            .font(ClaudeTypography.serif(size * 0.5))
+            .foregroundStyle(Color(hex: ClaudePalette.lightTokens.ink))
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
+            .frame(width: size, height: size)
+            .background(Circle().fill(ClaudePalette.primary))
+            .accessibilityHidden(true)
+    }
+
+    private var initial: String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.first.map { String($0).uppercased() } ?? "研"
+    }
+}
+
+/// Editable researcher profile fields (name, lab, focus). Edits flow straight into the bindings.
+struct QuickProfileEditorForm: View {
+    @Binding var researcherName: String
+    @Binding var labName: String
+    @Binding var researchFocus: String
+    var fieldHeight: CGFloat = 38
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            field("你的名字") {
+                TextField("输入你的名字（默认：研究者）", text: $researcherName)
+                    .claudeTextField(height: fieldHeight)
+            }
+            field("实验室 / 课题组") {
+                TextField("可选，例如：AI Systems Lab", text: $labName)
+                    .claudeTextField(height: fieldHeight)
+            }
+            field("研究方向 / 个人签名") {
+                TextField("可选，例如：PhD · 计算神经科学", text: $researchFocus)
+                    .claudeTextField(height: fieldHeight)
+            }
+        }
+    }
+
+    private func field<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(ClaudeTypography.caption)
+                .foregroundStyle(ClaudePalette.muted)
+            content()
+        }
+    }
+}
+
+/// Compact popover version (sidebar profile badge).
+struct QuickProfileEditorPopover: View {
+    @Binding var researcherName: String
+    @Binding var labName: String
+    @Binding var researchFocus: String
+    let onDone: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 10) {
+                ResearcherMonogram(name: researcherName, size: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("研究者档案").claudeDisplay(18, tracking: -0.3).foregroundStyle(ClaudePalette.ink)
+                    Text("自动保存，用于问候语与战报署名")
+                        .font(ClaudeTypography.caption)
+                        .foregroundStyle(ClaudePalette.muted)
+                }
+            }
+            QuickProfileEditorForm(researcherName: $researcherName, labName: $labName,
+                                   researchFocus: $researchFocus, fieldHeight: 34)
+            HStack {
+                Spacer()
+                Button("完成", action: onDone)
+                    .buttonStyle(ClaudePrimaryButtonStyle(height: 32))
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 320)
+        .background(ClaudePalette.canvas)
+    }
+}
+
+/// Sheet version (dashboard greeting pencil).
+struct QuickProfileEditorSheet: View {
+    @Binding var researcherName: String
+    @Binding var labName: String
+    @Binding var researchFocus: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            HStack(alignment: .center, spacing: 14) {
+                ResearcherMonogram(name: researcherName, size: 40)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Researcher Profile").claudeEyebrow(ClaudePalette.muted)
+                    Text("编辑研究者档案").claudeDisplay(26).foregroundStyle(ClaudePalette.ink)
+                }
+            }
+            Text("名字会出现在每日问候与科研战报的署名里；实验室与研究方向为可选项。修改即时保存。")
+                .font(ClaudeTypography.bodySM)
+                .foregroundStyle(ClaudePalette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            QuickProfileEditorForm(researcherName: $researcherName, labName: $labName, researchFocus: $researchFocus)
+            HStack {
+                Spacer()
+                Button("完成") { dismiss() }
+                    .buttonStyle(ClaudePrimaryButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(28)
+        .frame(width: 440)
+        .background(ClaudePalette.canvas)
+    }
+}
+
+// MARK: - Flow layout
+
+/// Left-aligned wrapping layout for pill rows.
+struct ClaudeFlowLayout: Layout {
+    var spacing: CGFloat = 6
+    var lineSpacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        let width = rows.map(\.width).max() ?? 0
+        let height = rows.reduce(0) { $0 + $1.height } + lineSpacing * CGFloat(max(rows.count - 1, 0))
+        return CGSize(width: proposal.width.map { min($0, width) } ?? width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(width: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                let fitted = CGSize(width: min(size.width, bounds.width), height: size.height)
+                subviews[index].place(at: CGPoint(x: x, y: y + (row.height - fitted.height) / 2),
+                                      proposal: ProposedViewSize(fitted))
+                x += fitted.width + spacing
+            }
+            y += row.height + lineSpacing
+        }
+    }
+
+    private struct Row {
+        var indices: [Int] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func arrange(width maxWidth: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = []
+        var current = Row()
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let w = min(size.width, maxWidth)
+            let needed = current.indices.isEmpty ? w : current.width + spacing + w
+            if needed > maxWidth, !current.indices.isEmpty {
+                rows.append(current)
+                current = Row()
+            }
+            current.width = current.indices.isEmpty ? w : current.width + spacing + w
+            current.height = max(current.height, size.height)
+            current.indices.append(index)
+        }
+        if !current.indices.isEmpty { rows.append(current) }
+        return rows
     }
 }

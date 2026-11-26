@@ -28,8 +28,8 @@ import Testing
         #expect(today.sessionCount == 2 && today.intensityLevel == 4)
         #expect(today.goalSummary == "建库")
         let yesterday = days[363]
-        #expect(yesterday.totalSeconds == 7200 && yesterday.intensityLevel == 2 && yesterday.goalSummary == "整理数据")
-        #expect(days.dropLast(2).allSatisfy { $0.totalSeconds == 0 && $0.intensityLevel == 0 })
+        #expect(yesterday.totalSeconds == 7200.0 && yesterday.intensityLevel == 2 && yesterday.goalSummary == "整理数据")
+        #expect(days.dropLast(2).allSatisfy { $0.totalSeconds == 0.0 && $0.intensityLevel == 0 })
     }
 
     @Test(arguments: [1, 2])

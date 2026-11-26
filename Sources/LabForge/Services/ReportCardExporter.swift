@@ -60,6 +60,7 @@ enum ReportCardExporter {
         panel.nameFieldStringValue = defaultFileName(for: snapshot.date)
         panel.allowedContentTypes = [.png]
         panel.canCreateDirectories = true
+        NSApp.activate()
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         guard let data = pngData(snapshot: snapshot, variant: variant) else { throw ExportError.renderFailed }
         do { try data.write(to: url, options: .atomic) } catch { throw ExportError.writeFailed(error.localizedDescription) }

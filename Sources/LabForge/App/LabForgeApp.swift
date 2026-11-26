@@ -30,14 +30,31 @@ final class LabForgeAppDelegate: NSObject, NSApplicationDelegate {
 
     /// Brings the existing dashboard window forward, or asks SwiftUI to open it.
     func showDashboard() {
-        if let window = NSApp.windows.first(where: { $0.identifier?.rawValue.contains(LabForgeApp.dashboardID) == true }),
-           window.isVisible || window.isMiniaturized {
-            if window.isMiniaturized { window.deminiaturize(nil) }
-            window.makeKeyAndOrderFront(nil)
-        } else {
-            openDashboard?()
-        }
+        if Self.focusExistingDashboard() { return }
+        openDashboard?()
+        Self.focusDashboardAfterOpen()
+    }
+
+    static func dashboardWindow() -> NSWindow? {
+        NSApp.windows.first { $0.identifier?.rawValue.contains(LabForgeApp.dashboardID) == true }
+    }
+
+    /// Activates the app and orders an already-visible (or minimized) dashboard key & front.
+    @discardableResult
+    static func focusExistingDashboard() -> Bool {
+        guard let window = dashboardWindow(), window.isVisible || window.isMiniaturized else { return false }
+        if window.isMiniaturized { window.deminiaturize(nil) }
         NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
+        return true
+    }
+
+    /// Requests activation and gives SwiftUI a chance to create the dashboard before focusing it.
+    static func focusDashboardAfterOpen() {
+        NSApp.activate()
+        Task { @MainActor in
+            focusExistingDashboard()
+        }
     }
 }
 
@@ -50,7 +67,7 @@ struct LabForgeApp: App {
     var body: some Scene {
         let viewModel = appDelegate.viewModel
 
-        Window("LabForge 研铸", id: Self.dashboardID) {
+        Window("LabForge", id: Self.dashboardID) {
             MainWorkbenchView()
                 .environment(viewModel)
                 .frame(minWidth: 880, minHeight: 620)
@@ -77,11 +94,18 @@ private struct MenuBarLabel: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Text(viewModel.menuBarTitle)
-            .monospacedDigit()
-            .onAppear {
-                let open = openWindow
-                appDelegate.openDashboard = { open(id: LabForgeApp.dashboardID) }
+        Group {
+            if viewModel.menuBarStyle == .iconOnly {
+                Image(systemName: viewModel.menuBarSymbol)
+            } else {
+                Text(viewModel.menuBarTitle)
+                    .monospacedDigit()
             }
+        }
+        .accessibilityLabel(viewModel.menuBarAccessibilityLabel)
+        .onAppear {
+            let open = openWindow
+            appDelegate.openDashboard = { open(id: LabForgeApp.dashboardID) }
+        }
     }
 }

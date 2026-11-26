@@ -32,7 +32,7 @@ import Testing
     @Test func midnightSplitTwoDays() {
         let s = session(d(2026, 1, 1, 22), d(2026, 1, 2, 1, 30))
         let byDay = CalendarDayHelper.secondsByDay(for: [s], now: d(2026, 1, 3), calendar: cal)
-        #expect(byDay == ["2026-01-01": 7200, "2026-01-02": 5400])
+        #expect(byDay == ["2026-01-01": 7200.0, "2026-01-02": 5400.0])
         #expect(CalendarDayHelper.sessionCountsByDay(for: [s], now: d(2026, 1, 3), calendar: cal) == ["2026-01-01": 1, "2026-01-02": 1])
     }
 
@@ -46,9 +46,9 @@ import Testing
     @Test func activeSessionCountsUntilNow() {
         let s = session(d(2026, 1, 1, 23), nil)
         let now = d(2026, 1, 2, 0, 30)
-        #expect(CalendarDayHelper.secondsByDay(for: [s], now: now, calendar: cal) == ["2026-01-01": 3600, "2026-01-02": 1800])
-        #expect(CalendarDayHelper.totalSeconds(on: now, sessions: [s], now: now, calendar: cal) == 1800)
-        #expect(CalendarDayHelper.totalSeconds(sessions: [s], now: now) == 5400)
+        #expect(CalendarDayHelper.secondsByDay(for: [s], now: now, calendar: cal) == ["2026-01-01": 3600.0, "2026-01-02": 1800.0])
+        #expect(CalendarDayHelper.totalSeconds(on: now, sessions: [s], now: now, calendar: cal) == 1800.0)
+        #expect(CalendarDayHelper.totalSeconds(sessions: [s], now: now) == 5400.0)
         #expect(CalendarDayHelper.sessionCountsByDay(for: [s], now: now, calendar: cal)["2026-01-02"] == 1)
     }
 
@@ -68,10 +68,10 @@ import Testing
                                                          now: d(2026, 1, 6), calendar: cal)
         #expect(summaries.map(\.dateKey) == ["2026-01-05", "2026-01-02", "2026-01-01"])
         let jan1 = summaries[2]
-        #expect(jan1.id == "2026-01-01" && jan1.goal == "跑胶" && jan1.sessionCount == 2 && jan1.totalSeconds == 7200)
+        #expect(jan1.id == "2026-01-01" && jan1.goal == "跑胶" && jan1.sessionCount == 2 && jan1.totalSeconds == 7200.0)
         #expect(jan1.sessions.map(\.id) == [a.id, b.id])
         #expect(jan1.date == d(2026, 1, 1))
-        #expect(summaries[1].totalSeconds == 3600 && summaries[1].sessionCount == 1)
+        #expect(summaries[1].totalSeconds == 3600.0 && summaries[1].sessionCount == 1)
         #expect(summaries[0].sessionCount == 0 && summaries[0].goal == "读文献")
     }
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# build-app.sh — LabForge（研铸）build, package, sign & DMG pipeline.
+# build-app.sh — LabForge build, package, sign & DMG pipeline.
 #
 # Pure SwiftPM pipeline (no Xcode project, no xcodebuild):
 #   1. Unit tests (CLT Swift Testing aware) with a hard "tests actually ran" assertion
@@ -177,6 +177,8 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" <<PLIST
 	<string>${BUILD_NUMBER}</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>

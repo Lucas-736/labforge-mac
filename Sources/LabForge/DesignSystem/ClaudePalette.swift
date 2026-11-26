@@ -1,4 +1,5 @@
 import AppKit
+import LabForgeCore
 import SwiftUI
 
 // MARK: - Hex helpers
@@ -127,6 +128,7 @@ enum ClaudePalette {
     // Brand
     static let primary = Color(hex: 0xCC785C)
     static let primaryActive = Color(hex: 0xA9583E)
+    static let accentForeground = adaptive(lightTokens.primaryActive, darkTokens.primary)
     static let primaryDisabled = adaptive(\.primaryDisabled)
     static let onPrimary = Color(hex: 0xFFFFFF)
 
@@ -151,6 +153,17 @@ enum ClaudePalette {
     static func heatmap(level: Int) -> Color {
         let i = min(max(level, 0), 4)
         return adaptive(lightTokens.heatmap[i], darkTokens.heatmap[i])
+    }
+
+    /// Warm category tone, strictly from DESIGN.md tokens (no neon, no cool blue).
+    static func category(_ category: SessionCategory) -> Color {
+        switch category {
+        case .experiment: return primary
+        case .reading: return accentAmber
+        case .writing: return accentTeal
+        case .coding: return adaptive(0x52504B, 0xABA79E)
+        case .meeting: return success
+        }
     }
 
     /// 3px coral focus ring at 15% alpha (`text-input-focused`).

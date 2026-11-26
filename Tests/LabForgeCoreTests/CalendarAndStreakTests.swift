@@ -10,7 +10,7 @@ import Testing
         let end = try #require(calendar.date(from: DateComponents(year: 2018, month: 11, day: 5, hour: 2)))
         let segments = CalendarDayHelper.daySegments(for: session(start, end), calendar: calendar)
         #expect(segments.map(\.dateKey) == ["2018-11-03", "2018-11-04", "2018-11-05"])
-        #expect(segments.map(\.seconds) == [3600, 23 * 3600, 2 * 3600])
+        #expect(segments.map(\.seconds) == [3600.0, 23.0 * 3600.0, 2.0 * 3600.0])
     }
 
     @Test func keys() {
@@ -39,7 +39,7 @@ import Testing
     @Test func midnightSplitThreeDays() {
         let s = session(d(2026, 1, 31, 20), d(2026, 2, 2, 2))
         let byDay = CalendarDayHelper.secondsByDay(for: [s], now: d(2026, 2, 3), calendar: cal)
-        #expect(byDay == ["2026-01-31": 4 * 3600, "2026-02-01": 24 * 3600, "2026-02-02": 2 * 3600])
+        #expect(byDay == ["2026-01-31": 4.0 * 3600.0, "2026-02-01": 24.0 * 3600.0, "2026-02-02": 2.0 * 3600.0])
         #expect(byDay.values.reduce(0, +) == s.duration())
     }
 
@@ -58,7 +58,7 @@ import Testing
         // 2026-03-08 is a 23-hour day in New York.
         let s = session(d(2026, 3, 7, 23, calendar: ny), d(2026, 3, 9, 1, calendar: ny))
         let byDay = CalendarDayHelper.secondsByDay(for: [s], now: d(2026, 3, 10, calendar: ny), calendar: ny)
-        #expect(byDay == ["2026-03-07": 3600, "2026-03-08": 23 * 3600, "2026-03-09": 3600])
+        #expect(byDay == ["2026-03-07": 3600.0, "2026-03-08": 23.0 * 3600.0, "2026-03-09": 3600.0])
     }
 
     @Test func dailySummaries() {

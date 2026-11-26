@@ -24,7 +24,7 @@ import Testing
         #expect(days.last!.date == cal.startOfDay(for: now))
         #expect(Set(days.map(\.id)).count == 365)
         let today = days.last!
-        #expect(today.totalSeconds == 3 * 3600 + 6 * 3600)
+        #expect(today.totalSeconds == 3.0 * 3600.0 + 6.0 * 3600.0)
         #expect(today.sessionCount == 2 && today.intensityLevel == 4)
         #expect(today.goalSummary == "建库")
         let yesterday = days[363]

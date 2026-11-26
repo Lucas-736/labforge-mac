@@ -1,0 +1,182 @@
+import AppKit
+import SwiftUI
+
+// MARK: - Hex helpers
+
+extension Color {
+    /// sRGB color from a `0xRRGGBB` literal.
+    init(hex: UInt32, opacity: Double = 1) {
+        self.init(
+            .sRGB,
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255,
+            opacity: opacity
+        )
+    }
+}
+
+extension NSColor {
+    convenience init(hex: UInt32) {
+        self.init(
+            srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: 1
+        )
+    }
+}
+
+// MARK: - Palette
+
+/// Claude editorial color tokens from `DESIGN.md`.
+///
+/// Top-level tokens are *adaptive*: they resolve to the Claude Classic Warm Cream value in light
+/// appearance and to the Warm Charcoal value in dark appearance. `Light` / `Dark` expose the raw
+/// values (used by the fixed-variant report card and the appearance previews).
+enum ClaudePalette {
+
+    /// Raw hex values for one appearance.
+    struct Tokens: Sendable {
+        let canvas: UInt32
+        let surfaceSoft: UInt32
+        let surfaceCard: UInt32
+        let surfaceCreamStrong: UInt32
+        let hairline: UInt32
+        let hairlineSoft: UInt32
+        let ink: UInt32
+        let bodyStrong: UInt32
+        let body: UInt32
+        let muted: UInt32
+        let mutedSoft: UInt32
+        let primary: UInt32
+        let primaryActive: UInt32
+        let primaryDisabled: UInt32
+        let onPrimary: UInt32
+        /// Heatmap intensity scale, level 0...4 (warm terracotta coral — never green, never neon).
+        let heatmap: [UInt32]
+    }
+
+    /// Claude Classic Warm Cream (default).
+    static let lightTokens = Tokens(
+        canvas: 0xFAF9F5,
+        surfaceSoft: 0xF5F0E8,
+        surfaceCard: 0xEFE9DE,
+        surfaceCreamStrong: 0xE8E0D2,
+        hairline: 0xE6DFD8,
+        hairlineSoft: 0xEBE6DF,
+        ink: 0x141413,
+        bodyStrong: 0x252523,
+        body: 0x3D3D3A,
+        muted: 0x6C6A64,
+        mutedSoft: 0x8E8B82,
+        primary: 0xCC785C,
+        primaryActive: 0xA9583E,
+        primaryDisabled: 0xE6DFD8,
+        onPrimary: 0xFFFFFF,
+        heatmap: [0xEBE4D8, 0xF0CDB9, 0xE3A285, 0xCC785C, 0xA9583E]
+    )
+
+    /// Warm Charcoal dark mode.
+    static let darkTokens = Tokens(
+        canvas: 0x181715,
+        surfaceSoft: 0x1F1E1B,
+        surfaceCard: 0x252320,
+        surfaceCreamStrong: 0x2E2B27,
+        hairline: 0x33302B,
+        hairlineSoft: 0x2B2824,
+        ink: 0xFAF9F5,
+        bodyStrong: 0xEBE6DF,
+        body: 0xD5D1C8,
+        muted: 0xA09D96,
+        mutedSoft: 0x78756E,
+        primary: 0xCC785C,
+        primaryActive: 0xA9583E,
+        primaryDisabled: 0x33302B,
+        onPrimary: 0xFFFFFF,
+        heatmap: [0x2B2824, 0x4B3329, 0x7A4A36, 0xA9583E, 0xCC785C]
+    )
+
+    /// Builds a color that follows the effective appearance (light ↔ warm charcoal).
+    static func adaptive(_ light: UInt32, _ dark: UInt32) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor(hex: isDark ? dark : light)
+        })
+    }
+
+    private static func adaptive(_ key: KeyPath<Tokens, UInt32>) -> Color {
+        adaptive(lightTokens[keyPath: key], darkTokens[keyPath: key])
+    }
+
+    // Surfaces
+    static let canvas = adaptive(\.canvas)
+    static let surfaceSoft = adaptive(\.surfaceSoft)
+    static let surfaceCard = adaptive(\.surfaceCard)
+    static let surfaceCreamStrong = adaptive(\.surfaceCreamStrong)
+    static let hairline = adaptive(\.hairline)
+    static let hairlineSoft = adaptive(\.hairlineSoft)
+
+    // Text
+    static let ink = adaptive(\.ink)
+    static let bodyStrong = adaptive(\.bodyStrong)
+    static let body = adaptive(\.body)
+    static let muted = adaptive(\.muted)
+    static let mutedSoft = adaptive(\.mutedSoft)
+
+    // Brand
+    static let primary = Color(hex: 0xCC785C)
+    static let primaryActive = Color(hex: 0xA9583E)
+    static let primaryDisabled = adaptive(\.primaryDisabled)
+    static let onPrimary = Color(hex: 0xFFFFFF)
+
+    // Accents & semantic (shared by both appearances)
+    static let accentTeal = Color(hex: 0x5DB8A6)
+    static let accentAmber = Color(hex: 0xE8A55A)
+    static let success = Color(hex: 0x5DB872)
+    static let warning = Color(hex: 0xD4A017)
+    static let error = Color(hex: 0xC64545)
+
+    /// Cream-gold spark tone used only by the celebration particles.
+    static let creamGold = Color(hex: 0xF3D9A4)
+
+    // Featured dark contrast tokens — fixed, usable in both modes.
+    static let surfaceDark = Color(hex: 0x181715)
+    static let surfaceDarkSoft = Color(hex: 0x1F1E1B)
+    static let surfaceDarkElevated = Color(hex: 0x252320)
+    static let onDark = Color(hex: 0xFAF9F5)
+    static let onDarkSoft = Color(hex: 0xA09D96)
+
+    /// Adaptive heatmap color for intensity `level` (clamped to 0...4).
+    static func heatmap(level: Int) -> Color {
+        let i = min(max(level, 0), 4)
+        return adaptive(lightTokens.heatmap[i], darkTokens.heatmap[i])
+    }
+
+    /// 3px coral focus ring at 15% alpha (`text-input-focused`).
+    static let focusRing = Color(hex: 0xCC785C, opacity: 0.15)
+}
+
+/// Fixed (non-adaptive) palette for surfaces that must render one specific variant regardless of
+/// the window appearance — the exported report card and the appearance mode previews.
+struct FixedPalette: Sendable {
+    let tokens: ClaudePalette.Tokens
+
+    static let light = FixedPalette(tokens: ClaudePalette.lightTokens)
+    static let dark = FixedPalette(tokens: ClaudePalette.darkTokens)
+
+    var canvas: Color { Color(hex: tokens.canvas) }
+    var surfaceSoft: Color { Color(hex: tokens.surfaceSoft) }
+    var surfaceCard: Color { Color(hex: tokens.surfaceCard) }
+    var surfaceCreamStrong: Color { Color(hex: tokens.surfaceCreamStrong) }
+    var hairline: Color { Color(hex: tokens.hairline) }
+    var hairlineSoft: Color { Color(hex: tokens.hairlineSoft) }
+    var ink: Color { Color(hex: tokens.ink) }
+    var bodyStrong: Color { Color(hex: tokens.bodyStrong) }
+    var body: Color { Color(hex: tokens.body) }
+    var muted: Color { Color(hex: tokens.muted) }
+    var mutedSoft: Color { Color(hex: tokens.mutedSoft) }
+    var primary: Color { Color(hex: tokens.primary) }
+    var onPrimary: Color { Color(hex: tokens.onPrimary) }
+    func heatmap(_ level: Int) -> Color { Color(hex: tokens.heatmap[min(max(level, 0), 4)]) }
+}

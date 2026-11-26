@@ -1,0 +1,53 @@
+name: Build LabForge (macOS)
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: Build & Package (macOS 15)
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Swift & macOS environment
+        run: |
+          swift --version
+          sw_vers
+          uname -m
+
+      - name: Build, sign & package
+        # Runs unit tests (with a hard "tests actually ran" assertion,
+        # CLT Swift Testing aware), builds the release binary, generates the
+        # .icns, assembles + ad-hoc signs dist/LabForge.app and creates
+        # dist/LabForge.dmg.
+        run: ./scripts/build-app.sh
+
+      - name: Zip the .app
+        run: ditto -c -k --sequesterRsrc --keepParent dist/LabForge.app dist/LabForge-app.zip
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: LabForge-macos
+          path: |
+            dist/LabForge.dmg
+            dist/LabForge-app.zip
+
+      - name: Attach artifacts to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/LabForge.dmg
+            dist/LabForge-app.zip

@@ -1,0 +1,17 @@
+# Swift Package Manager & Build Artifacts
+.build/
+.swiftpm/
+Package.resolved
+dist/
+*.dmg
+*.app/
+*.iconset/
+
+# macOS & Editor Metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+*.swp
+*~
+.vscode/
+.idea/

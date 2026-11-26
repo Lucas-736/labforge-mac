@@ -32,6 +32,7 @@ import Testing
         #expect(s.soundEnabled && s.soundName == "Glass")
         #expect(s.globalShortcutEnabled)
         #expect(s.sleepPromptThresholdMinutes == 30)
+        #expect(s.hideDockIcon)
         #expect(s == LabSettings(appearanceMode: .dark, dailyTargetHours: 6, reminderEnabled: true, reminderHour: 8, reminderMinute: 30))
     }
 
@@ -158,5 +159,32 @@ import Testing
         #expect(MenuBarDisplayStyle.allCases.map(\.displayName) == ["完整：火焰与时长", "极简：仅时长", "纯图标：省空间"])
         #expect(MenuBarDisplayStyle.iconOnly.id == "iconOnly")
         #expect(LabSession(startTime: d(2026, 1, 1)).category == .experiment)
+    }
+
+    @Test func hideDockIconDefaultsToTrue() {
+        #expect(LabSettings().hideDockIcon)
+        #expect(LabSettings(hideDockIcon: false).hideDockIcon == false)
+    }
+
+    @Test func hideDockIconRoundTrips() throws {
+        for hidden in [false, true] {
+            let original = LabSettings(hideDockIcon: hidden)
+            let encoded = try JSONEncoder().encode(original)
+            let object = try #require(try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+            #expect(object["hideDockIcon"] as? Bool == hidden)
+            let restored = try JSONDecoder().decode(LabSettings.self, from: encoded)
+            #expect(restored.hideDockIcon == hidden)
+            #expect(restored == original)
+        }
+    }
+
+    @Test func hideDockIconLegacyAndInvalidDecodeToTrue() throws {
+        let legacy = try JSONDecoder().decode(LabSettings.self, from: Data(#"{"appearanceMode":"dark","dailyTargetHours":6}"#.utf8))
+        #expect(legacy.hideDockIcon)
+        #expect(legacy.dailyTargetHours == 6.0)
+        let invalid = try JSONDecoder().decode(LabSettings.self, from: Data(#"{"hideDockIcon":"nope"}"#.utf8))
+        #expect(invalid.hideDockIcon)
+        let off = try JSONDecoder().decode(LabSettings.self, from: Data(#"{"hideDockIcon":false}"#.utf8))
+        #expect(off.hideDockIcon == false)
     }
 }

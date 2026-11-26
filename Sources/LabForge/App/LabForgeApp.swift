@@ -30,14 +30,31 @@ final class LabForgeAppDelegate: NSObject, NSApplicationDelegate {
 
     /// Brings the existing dashboard window forward, or asks SwiftUI to open it.
     func showDashboard() {
-        if let window = NSApp.windows.first(where: { $0.identifier?.rawValue.contains(LabForgeApp.dashboardID) == true }),
-           window.isVisible || window.isMiniaturized {
-            if window.isMiniaturized { window.deminiaturize(nil) }
-            window.makeKeyAndOrderFront(nil)
-        } else {
-            openDashboard?()
-        }
+        if Self.focusExistingDashboard() { return }
+        openDashboard?()
+        Self.focusDashboardAfterOpen()
+    }
+
+    static func dashboardWindow() -> NSWindow? {
+        NSApp.windows.first { $0.identifier?.rawValue.contains(LabForgeApp.dashboardID) == true }
+    }
+
+    /// Activates the app and orders an already-visible (or minimized) dashboard key & front.
+    @discardableResult
+    static func focusExistingDashboard() -> Bool {
+        guard let window = dashboardWindow(), window.isVisible || window.isMiniaturized else { return false }
+        if window.isMiniaturized { window.deminiaturize(nil) }
         NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
+        return true
+    }
+
+    /// Requests activation and gives SwiftUI a chance to create the dashboard before focusing it.
+    static func focusDashboardAfterOpen() {
+        NSApp.activate()
+        Task { @MainActor in
+            focusExistingDashboard()
+        }
     }
 }
 

@@ -91,6 +91,8 @@ public struct LabSettings: Codable, Sendable, Equatable, Hashable {
     public var sleepPromptThresholdMinutes: Int {
         didSet { sleepPromptThresholdMinutes = Self.clamp(sleepPromptThresholdMinutes, Self.sleepPromptThresholdRange) }
     }
+    /// Menu-bar-only mode: hide the Dock icon (`.accessory` activation policy). Defaults to `true`.
+    public var hideDockIcon: Bool
 
     public init(
         appearanceMode: AppearanceMode = .light,
@@ -107,7 +109,8 @@ public struct LabSettings: Codable, Sendable, Equatable, Hashable {
         soundEnabled: Bool = true,
         soundName: String = LabSettings.defaultSoundName,
         globalShortcutEnabled: Bool = true,
-        sleepPromptThresholdMinutes: Int = 30
+        sleepPromptThresholdMinutes: Int = 30,
+        hideDockIcon: Bool = true
     ) {
         self.appearanceMode = appearanceMode
         self.dailyTargetHours = Self.clampTarget(dailyTargetHours)
@@ -124,6 +127,7 @@ public struct LabSettings: Codable, Sendable, Equatable, Hashable {
         self.soundName = soundName
         self.globalShortcutEnabled = globalShortcutEnabled
         self.sleepPromptThresholdMinutes = Self.clamp(sleepPromptThresholdMinutes, Self.sleepPromptThresholdRange)
+        self.hideDockIcon = hideDockIcon
     }
 
     /// Daily target expressed in seconds.
@@ -155,6 +159,7 @@ public struct LabSettings: Codable, Sendable, Equatable, Hashable {
         case appearanceMode, dailyTargetHours, reminderEnabled, reminderHour, reminderMinute, launchAtLogin
         case researcherName, labName, researchFocus, weeklyTargetHours, menuBarStyle
         case soundEnabled, soundName, globalShortcutEnabled, sleepPromptThresholdMinutes
+        case hideDockIcon
     }
 
     public init(from decoder: Decoder) throws {
@@ -178,7 +183,8 @@ public struct LabSettings: Codable, Sendable, Equatable, Hashable {
             soundEnabled: value(Bool.self, .soundEnabled, defaults.soundEnabled),
             soundName: value(String.self, .soundName, defaults.soundName),
             globalShortcutEnabled: value(Bool.self, .globalShortcutEnabled, defaults.globalShortcutEnabled),
-            sleepPromptThresholdMinutes: value(Int.self, .sleepPromptThresholdMinutes, defaults.sleepPromptThresholdMinutes)
+            sleepPromptThresholdMinutes: value(Int.self, .sleepPromptThresholdMinutes, defaults.sleepPromptThresholdMinutes),
+            hideDockIcon: value(Bool.self, .hideDockIcon, defaults.hideDockIcon)
         )
     }
 
@@ -199,6 +205,7 @@ public struct LabSettings: Codable, Sendable, Equatable, Hashable {
         try c.encode(soundName, forKey: .soundName)
         try c.encode(globalShortcutEnabled, forKey: .globalShortcutEnabled)
         try c.encode(sleepPromptThresholdMinutes, forKey: .sleepPromptThresholdMinutes)
+        try c.encode(hideDockIcon, forKey: .hideDockIcon)
     }
 
     static func clampTarget(_ value: Double) -> Double {

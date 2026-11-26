@@ -236,6 +236,15 @@ private struct MenuBarShortcutSoundSection: View {
             }
             ClaudeDivider(color: ClaudePalette.hairlineSoft)
 
+            row(icon: "dock.rectangle", title: "隐藏程序坞（Dock）图标",
+                detail: "仅在顶部菜单栏常驻，不在底部程序坞显示；随时可点菜单栏打开主仪表盘") {
+                Toggle("", isOn: Binding(get: { viewModel.hideDockIcon }, set: { viewModel.setHideDockIcon($0) }))
+                    .toggleStyle(.switch)
+                    .tint(ClaudePalette.primary)
+                    .labelsHidden()
+            }
+            ClaudeDivider(color: ClaudePalette.hairlineSoft)
+
             row(icon: "command", title: "全局快捷键 \(GlobalHotKeyService.shortcutLabel)",
                 detail: viewModel.globalShortcutStatusText,
                 detailColor: viewModel.globalShortcutEnabled && !viewModel.isGlobalShortcutRegistered ? ClaudePalette.error : ClaudePalette.muted) {

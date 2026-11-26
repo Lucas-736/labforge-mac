@@ -101,8 +101,9 @@ struct MenuBarPopoverView: View {
 
             HStack {
                 Button {
+                    if LabForgeAppDelegate.focusExistingDashboard() { return }
                     openWindow(id: LabForgeApp.dashboardID)
-                    NSApp.activate()
+                    LabForgeAppDelegate.focusDashboardAfterOpen()
                 } label: {
                     Label("打开主仪表盘", systemImage: "macwindow")
                 }

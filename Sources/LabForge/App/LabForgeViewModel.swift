@@ -625,9 +625,43 @@ final class LabForgeViewModel {
     /// Re-applies the AppKit appearance once `NSApp` exists (called from the app delegate).
     func applicationDidFinishLaunching() {
         applyAppKitAppearance()
+        if !applyDockIconPolicy() { show("无法切换程序坞图标。", .error) }
         refreshServiceStatuses()
         if !writesBlocked { syncReminder(showFeedback: false) }
         syncGlobalShortcut(showFeedback: false)
+    }
+
+    // MARK: Dock icon (menu-bar-only mode)
+
+    var hideDockIcon: Bool { data.settings.hideDockIcon }
+
+    func setHideDockIcon(_ hidden: Bool) {
+        guard updateSettings({ $0.hideDockIcon = hidden }) else { return }
+        guard applyDockIconPolicy() else {
+            show("设置已保存，但 macOS 未能切换程序坞图标。", .error)
+            return
+        }
+        show(hidden ? "已隐藏程序坞图标，仅在顶部菜单栏显示。" : "已在程序坞显示 LabForge 图标。", hidden ? .success : .info)
+    }
+
+    /// Applies the saved preference and restores focus to the dashboard if it was in use.
+    private func applyDockIconPolicy() -> Bool {
+        guard let app = NSApp else { return false }
+        let target: NSApplication.ActivationPolicy = data.settings.hideDockIcon ? .accessory : .regular
+        guard app.activationPolicy() != target else { return true }
+        let dashboard = LabForgeAppDelegate.dashboardWindow()
+        let restoreFocus = app.isActive && dashboard?.isVisible == true
+        guard app.setActivationPolicy(target) else { return false }
+        guard restoreFocus else { return true }
+        dashboard?.makeKeyAndOrderFront(nil)
+        app.activate()
+        Task { @MainActor in
+            guard NSApp.activationPolicy() == target,
+                  let dashboard = LabForgeAppDelegate.dashboardWindow(),
+                  dashboard.isVisible, !dashboard.isMiniaturized else { return }
+            dashboard.makeKeyAndOrderFront(nil)
+        }
+        return true
     }
 
     // MARK: Daily target
@@ -907,6 +941,7 @@ final class LabForgeViewModel {
         panel.canCreateDirectories = true
         let c = calendar.dateComponents([.year, .month, .day], from: Date())
         panel.nameFieldStringValue = String(format: "LabForge-备份-%04d-%02d-%02d.json", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+        NSApp.activate()
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard url.resolvingSymlinksInPath().standardizedFileURL != store.fileURL.resolvingSymlinksInPath().standardizedFileURL else {
             show("请选择不同于当前数据文件的备份位置。", .error)
@@ -928,6 +963,7 @@ final class LabForgeViewModel {
         panel.canCreateDirectories = true
         let c = calendar.dateComponents([.year, .month, .day], from: Date())
         panel.nameFieldStringValue = String(format: "LabForge-记录-%04d-%02d-%02d.csv", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+        NSApp.activate()
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard url.resolvingSymlinksInPath().standardizedFileURL != store.fileURL.resolvingSymlinksInPath().standardizedFileURL else {
             show("请选择不同于当前数据文件的导出位置。", .error)
@@ -948,6 +984,7 @@ final class LabForgeViewModel {
         panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
+        NSApp.activate()
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         let imported: LabStoreData
@@ -966,6 +1003,7 @@ final class LabForgeViewModel {
         alert.addButton(withTitle: "取消")
         alert.alertStyle = .informational
 
+        NSApp.activate()
         let choice = alert.runModal()
         let before = data.sessions.count
         let replace: Bool
@@ -994,10 +1032,12 @@ final class LabForgeViewModel {
             nextCategory = data.activeSession?.category
                 ?? data.sessions.max { $0.startTime < $1.startTime }?.category ?? .default
             applyAppKitAppearance()
+            let dockPolicyApplied = applyDockIconPolicy()
             syncReminder(showFeedback: false)
             syncGlobalShortcut(showFeedback: false)
             refreshServiceStatuses()
-            show("已用备份覆盖，共 \(data.sessions.count) 条记录。", .success)
+            let summary = "已用备份覆盖，共 \(data.sessions.count) 条记录。"
+            show(dockPolicyApplied ? summary : summary + " macOS 未能切换程序坞图标。", dockPolicyApplied ? .success : .error)
         } else {
             show("合并完成：新增 \(max(0, data.sessions.count - before)) 条，共 \(data.sessions.count) 条记录。", .success)
         }

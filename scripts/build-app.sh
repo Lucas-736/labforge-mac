@@ -177,6 +177,8 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" <<PLIST
 	<string>${BUILD_NUMBER}</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>

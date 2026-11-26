@@ -180,7 +180,7 @@ public enum InsightsEngine: Sendable {
         let recorded = sessions.filter { $0.duration(asOf: now) > 0 }
         guard !recorded.isEmpty else {
             return [CalmObservation(id: "starter", title: "从第一次记录开始",
-                                    detail: "开始一次计时，研铸会在这里安静地记下你的科研节奏。",
+                                    detail: "开始一次计时，LabForge 会在这里安静地记下你的科研节奏。",
                                     symbolName: "leaf")]
         }
 

@@ -78,9 +78,6 @@ struct LabForgeWordmark: View {
             Text("LabForge")
                 .claudeDisplay(fontSize, tracking: -0.4)
                 .foregroundStyle(color)
-            Text("研铸")
-                .font(ClaudeTypography.serif(fontSize * 0.72))
-                .foregroundStyle(ClaudePalette.muted)
         }
     }
 }

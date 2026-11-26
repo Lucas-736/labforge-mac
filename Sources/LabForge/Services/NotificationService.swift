@@ -102,7 +102,7 @@ final class NotificationService {
 
     private nonisolated static func addDailyRequest(identifier: String, hour: Int, minute: Int) async throws {
         let content = UNMutableNotificationContent()
-        content.title = "LabForge 研铸 · 打卡提醒"
+        content.title = "LabForge · 打卡提醒"
         content.body = "新的一天，进实验室点一下「进入实验室打卡」，让今天的努力被记录下来。"
         content.sound = .default
 

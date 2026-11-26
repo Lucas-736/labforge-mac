@@ -1,6 +1,6 @@
 #!/usr/bin/env swift
 //
-// generate-icon.swift — LabForge（研铸）app icon generator
+// generate-icon.swift — LabForge app icon generator
 //
 // Renders the LabForge .icns app icon entirely in code using only
 // Foundation + AppKit + CoreGraphics (zero third-party dependencies).

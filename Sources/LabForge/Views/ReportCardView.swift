@@ -81,7 +81,7 @@ struct ReportCardView: View {
             HStack(alignment: .center) {
                 HStack(spacing: 8) {
                     LabForgeMarkView(size: 16, color: p.primary)
-                    Text("LABFORGE · 研铸日报")
+                    Text("LABFORGE · 科研日报")
                         .font(.system(size: 11, weight: .medium))
                         .tracking(1.8)
                         .foregroundStyle(p.ink)
@@ -276,7 +276,7 @@ struct ReportCardView: View {
         VStack(spacing: 10) {
             Rectangle().fill(p.hairline).frame(height: 1)
             HStack {
-                Text("\(snapshot.researcherName) · Forged in LabForge 研铸")
+                Text("\(snapshot.researcherName) · Forged in LabForge")
                     .font(.system(size: 12, weight: .regular, design: .serif))
                     .foregroundStyle(p.body)
                     .lineLimit(1)

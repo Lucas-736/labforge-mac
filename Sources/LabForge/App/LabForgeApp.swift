@@ -67,7 +67,7 @@ struct LabForgeApp: App {
     var body: some Scene {
         let viewModel = appDelegate.viewModel
 
-        Window("LabForge 研铸", id: Self.dashboardID) {
+        Window("LabForge", id: Self.dashboardID) {
             MainWorkbenchView()
                 .environment(viewModel)
                 .frame(minWidth: 880, minHeight: 620)

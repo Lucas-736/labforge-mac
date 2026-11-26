@@ -447,7 +447,7 @@ private struct AboutSection: View {
             LabForgeMarkView(size: 44)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text("LabForge 研铸").claudeDisplay(24).foregroundStyle(ClaudePalette.ink)
+                    Text("LabForge").claudeDisplay(24).foregroundStyle(ClaudePalette.ink)
                     ClaudeBadgePill(text: "v\(version)", style: .neutral)
                 }
                 Text("把每一次进出实验室，铸成看得见的积累。原生 SwiftUI + AppKit，数据完全本地。")

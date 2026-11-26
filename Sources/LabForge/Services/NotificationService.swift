@@ -30,16 +30,16 @@ final class NotificationService {
 
     /// Current authorization + scheduling state.
     func currentStatus() async -> Status {
-        guard let center else { return .unavailable }
-        let settings = await center.notificationSettings()
-        switch settings.authorizationStatus {
+        guard Self.isAvailable else { return .unavailable }
+        let authStatus = await Self.fetchAuthorizationStatus()
+        switch authStatus {
         case .notDetermined:
             return .notDetermined
         case .denied:
             return .denied
         case .authorized, .provisional, .ephemeral:
-            let pending = await center.pendingNotificationRequests()
-            return .authorized(scheduled: pending.contains { $0.identifier == Self.reminderIdentifier })
+            let scheduled = await Self.hasPendingReminder(identifier: Self.reminderIdentifier)
+            return .authorized(scheduled: scheduled)
         @unknown default:
             return .notDetermined
         }
@@ -47,30 +47,19 @@ final class NotificationService {
 
     /// Requests permission if needed and (re)schedules the daily reminder.
     func scheduleDailyReminder(hour: Int, minute: Int) async -> Status {
-        guard let center else { return .unavailable }
+        guard Self.isAvailable else { return .unavailable }
         do {
-            let settings = await center.notificationSettings()
+            let authStatus = await Self.fetchAuthorizationStatus()
             try Task.checkCancellation()
-            if settings.authorizationStatus == .notDetermined {
-                let granted = try await center.requestAuthorization(options: [.alert, .sound])
+            if authStatus == .notDetermined {
+                let granted = try await Self.requestAuthorization()
                 if !granted { return .denied }
-            } else if settings.authorizationStatus == .denied {
+            } else if authStatus == .denied {
                 return .denied
             }
 
             try Task.checkCancellation()
-
-            let content = UNMutableNotificationContent()
-            content.title = "LabForge 研铸 · 打卡提醒"
-            content.body = "新的一天，进实验室点一下「进入实验室打卡」，让今天的努力被记录下来。"
-            content.sound = .default
-
-            var components = DateComponents()
-            components.hour = hour
-            components.minute = minute
-            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
-            let request = UNNotificationRequest(identifier: Self.reminderIdentifier, content: content, trigger: trigger)
-            try await center.add(request)
+            try await Self.addDailyRequest(identifier: Self.reminderIdentifier, hour: hour, minute: minute)
             return .authorized(scheduled: true)
         } catch {
             return .error(error.localizedDescription)
@@ -79,6 +68,59 @@ final class NotificationService {
 
     func cancelDailyReminder() {
         center?.removePendingNotificationRequests(withIdentifiers: [Self.reminderIdentifier])
+    }
+
+    // MARK: - Nonisolated SDK bridges (Sendable-safe across macOS 15+ and newer SDKs)
+
+    private nonisolated static func fetchAuthorizationStatus() async -> UNAuthorizationStatus {
+        await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                continuation.resume(returning: settings.authorizationStatus)
+            }
+        }
+    }
+
+    private nonisolated static func hasPendingReminder(identifier: String) async -> Bool {
+        await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
+                continuation.resume(returning: requests.contains { $0.identifier == identifier })
+            }
+        }
+    }
+
+    private nonisolated static func requestAuthorization() async throws -> Bool {
+        try await withCheckedThrowingContinuation { continuation in
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: granted)
+                }
+            }
+        }
+    }
+
+    private nonisolated static func addDailyRequest(identifier: String, hour: Int, minute: Int) async throws {
+        let content = UNMutableNotificationContent()
+        content.title = "LabForge 研铸 · 打卡提醒"
+        content.body = "新的一天，进实验室点一下「进入实验室打卡」，让今天的努力被记录下来。"
+        content.sound = .default
+
+        var components = DateComponents()
+        components.hour = hour
+        components.minute = minute
+        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+        let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
     }
 
     /// Chinese explanation for the Settings banner.

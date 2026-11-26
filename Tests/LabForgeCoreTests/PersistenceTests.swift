@@ -66,7 +66,7 @@ import Testing
         "goal":"","notes":"","isManualEntry":true,"createdAt":"2026-01-01T01:00:00Z","updatedAt":"2026-01-01T02:00:00Z"}],"dailyGoals":{}}
         """
         let data = try LabPersistenceStore(fileURL: tempStoreURL()).decodeImportedJSON(Data(json.utf8))
-        #expect(data.sessions.count == 1 && data.sessions[0].duration() == 3600 && data.settings == LabSettings())
+        #expect(data.sessions.count == 1 && data.sessions[0].duration() == 3600.0 && data.settings == LabSettings())
     }
 
     @Test func importRejectsBadInput() throws {

@@ -77,11 +77,18 @@ private struct MenuBarLabel: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Text(viewModel.menuBarTitle)
-            .monospacedDigit()
-            .onAppear {
-                let open = openWindow
-                appDelegate.openDashboard = { open(id: LabForgeApp.dashboardID) }
+        Group {
+            if viewModel.menuBarStyle == .iconOnly {
+                Image(systemName: viewModel.menuBarSymbol)
+            } else {
+                Text(viewModel.menuBarTitle)
+                    .monospacedDigit()
             }
+        }
+        .accessibilityLabel(viewModel.menuBarAccessibilityLabel)
+        .onAppear {
+            let open = openWindow
+            appDelegate.openDashboard = { open(id: LabForgeApp.dashboardID) }
+        }
     }
 }

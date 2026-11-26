@@ -8,12 +8,14 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 ClaudePageHeader(eyebrow: "Preferences", title: "设置",
-                                 subtitle: "外观、目标、提醒与数据，都在这里。")
+                                 subtitle: "档案、外观、目标、提醒与数据，都在这里。")
+                ResearcherProfileSection()
                 AppearanceSection()
                 HStack(alignment: .top, spacing: 20) {
                     DailyTargetSection()
                     ReminderSection()
                 }
+                MenuBarShortcutSoundSection()
                 LaunchAtLoginSection()
                 DataSection()
                 AboutSection()
@@ -22,6 +24,41 @@ struct SettingsView: View {
             .padding(.vertical, 32)
             .frame(maxWidth: 1100, alignment: .leading)
         }
+    }
+}
+
+// MARK: - Researcher profile
+
+private struct ResearcherProfileSection: View {
+    @Environment(LabForgeViewModel.self) private var viewModel
+
+    var body: some View {
+        @Bindable var vm = viewModel
+        HStack(alignment: .top, spacing: 24) {
+            VStack(alignment: .leading, spacing: 12) {
+                ResearcherMonogram(name: viewModel.effectiveResearcherName, size: 56)
+                Text(viewModel.effectiveResearcherName)
+                    .claudeDisplay(22)
+                    .foregroundStyle(ClaudePalette.ink)
+                    .lineLimit(2)
+                if !viewModel.trimmedLabName.isEmpty {
+                    Text(viewModel.trimmedLabName)
+                        .font(ClaudeTypography.bodySM)
+                        .foregroundStyle(ClaudePalette.muted)
+                        .lineLimit(2)
+                }
+                ClaudeBadgePill(text: viewModel.rankProgress.currentRank.title,
+                                systemImage: viewModel.rankProgress.currentRank.symbolName)
+            }
+            .frame(width: 180, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 16) {
+                ClaudeCardHeader(title: "研究者档案", subtitle: "用于每日问候、侧边栏与战报署名，修改后自动保存。")
+                QuickProfileEditorForm(researcherName: $vm.researcherName, labName: $vm.labName,
+                                       researchFocus: $vm.researchFocus)
+            }
+        }
+        .claudeCard(.canvas)
     }
 }
 
@@ -135,27 +172,141 @@ private struct DailyTargetSection: View {
     var body: some View {
         @Bindable var vm = viewModel
         VStack(alignment: .leading, spacing: 16) {
-            ClaudeCardHeader(title: "每日目标时长", subtitle: "进度条与战报按此计算")
+            ClaudeCardHeader(title: "目标时长", subtitle: "进度条、洞察与战报按此计算")
+            target(label: "每日目标时长", value: viewModel.dailyTargetHours, unit: "小时 / 天",
+                   binding: $vm.dailyTargetHours, range: LabSettings.dailyTargetRange, step: 0.5)
+            ClaudeDivider(color: ClaudePalette.hairline)
+            target(label: "每周目标时长", value: viewModel.weeklyTargetHours, unit: "小时 / 周",
+                   binding: $vm.weeklyTargetHours, range: LabSettings.weeklyTargetRange, step: 1.0)
+        }
+        .claudeCard(.card)
+    }
+
+    private func target(label: String, value: Double, unit: String, binding: Binding<Double>,
+                        range: ClosedRange<Double>, step: Double) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label)
+                .font(ClaudeTypography.caption)
+                .foregroundStyle(ClaudePalette.muted)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(String(format: "%.1f", viewModel.dailyTargetHours))
-                    .font(.system(size: 40, weight: .light).monospacedDigit())
+                Text(String(format: step < 1 ? "%.1f" : "%.0f", value))
+                    .font(.system(size: 34, weight: .light).monospacedDigit())
                     .foregroundStyle(ClaudePalette.ink)
-                Text("小时 / 天")
+                Text(unit)
                     .font(ClaudeTypography.bodySM)
                     .foregroundStyle(ClaudePalette.muted)
                 Spacer()
-                Stepper("", value: $vm.dailyTargetHours, in: LabSettings.dailyTargetRange, step: 0.5)
+                Stepper("", value: binding, in: range, step: step)
                     .labelsHidden()
             }
-            Slider(value: $vm.dailyTargetHours, in: LabSettings.dailyTargetRange, step: 0.5)
+            Slider(value: binding, in: range, step: step)
                 .tint(ClaudePalette.primary)
             HStack {
-                Text("1.0h").font(ClaudeTypography.number(11)).foregroundStyle(ClaudePalette.mutedSoft)
+                Text(String(format: step < 1 ? "%.1fh" : "%.0fh", range.lowerBound))
+                    .font(ClaudeTypography.number(11)).foregroundStyle(ClaudePalette.mutedSoft)
                 Spacer()
-                Text("16.0h").font(ClaudeTypography.number(11)).foregroundStyle(ClaudePalette.mutedSoft)
+                Text(String(format: step < 1 ? "%.1fh" : "%.0fh", range.upperBound))
+                    .font(ClaudeTypography.number(11)).foregroundStyle(ClaudePalette.mutedSoft)
             }
         }
-        .claudeCard(.card)
+    }
+}
+
+// MARK: - Menu bar, shortcut & sound
+
+private struct MenuBarShortcutSoundSection: View {
+    @Environment(LabForgeViewModel.self) private var viewModel
+
+    private static let sleepThresholds: [(minutes: Int, title: String)] = [(0, "关闭"), (15, "15 分钟"), (30, "30 分钟"), (60, "60 分钟")]
+
+    var body: some View {
+        @Bindable var vm = viewModel
+        VStack(alignment: .leading, spacing: 18) {
+            ClaudeCardHeader(title: "菜单栏、快捷键与提示音", subtitle: "安静地待在菜单栏，需要时一键打卡。")
+
+            row(icon: "menubar.rectangle", title: "菜单栏显示", detail: "选择菜单栏图标旁显示的信息量") {
+                Picker("", selection: $vm.menuBarStyle) {
+                    Text("完整").tag(MenuBarDisplayStyle.full)
+                    Text("极简").tag(MenuBarDisplayStyle.compact)
+                    Text("纯图标").tag(MenuBarDisplayStyle.iconOnly)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 220)
+            }
+            ClaudeDivider(color: ClaudePalette.hairlineSoft)
+
+            row(icon: "command", title: "全局快捷键 \(GlobalHotKeyService.shortcutLabel)",
+                detail: viewModel.globalShortcutStatusText,
+                detailColor: viewModel.globalShortcutEnabled && !viewModel.isGlobalShortcutRegistered ? ClaudePalette.error : ClaudePalette.muted) {
+                HStack(spacing: 10) {
+                    ClaudeBadgePill(text: "无需辅助功能权限", style: .outline)
+                    Toggle("", isOn: $vm.globalShortcutEnabled)
+                        .toggleStyle(.switch)
+                        .tint(ClaudePalette.primary)
+                        .labelsHidden()
+                }
+            }
+            ClaudeDivider(color: ClaudePalette.hairlineSoft)
+
+            row(icon: "speaker.wave.1", title: "打卡 / 收工提示音", detail: "柔和的系统音效，音量约 45%") {
+                HStack(spacing: 10) {
+                    Picker("", selection: $vm.soundName) {
+                        ForEach(LabSettings.availableSoundNames, id: \.self) { Text($0).tag($0) }
+                    }
+                    .labelsHidden()
+                    .frame(width: 120)
+                    .disabled(!viewModel.soundEnabled)
+                    Button {
+                        viewModel.previewSound()
+                    } label: {
+                        Label("试听", systemImage: "play.fill")
+                    }
+                    .buttonStyle(ClaudeSecondaryButtonStyle(compact: true))
+                    Toggle("", isOn: $vm.soundEnabled)
+                        .toggleStyle(.switch)
+                        .tint(ClaudePalette.primary)
+                        .labelsHidden()
+                }
+            }
+            ClaudeDivider(color: ClaudePalette.hairlineSoft)
+
+            row(icon: "moon.zzz", title: "休眠恢复提示",
+                detail: "计时中电脑休眠超过设定时长，唤醒后询问是否保留这段时间") {
+                Picker("", selection: $vm.sleepPromptThresholdMinutes) {
+                    ForEach(Self.sleepThresholds, id: \.minutes) { Text($0.title).tag($0.minutes) }
+                    if !Self.sleepThresholds.contains(where: { $0.minutes == viewModel.sleepPromptThresholdMinutes }) {
+                        Text("\(viewModel.sleepPromptThresholdMinutes) 分钟").tag(viewModel.sleepPromptThresholdMinutes)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 120)
+            }
+        }
+        .claudeCard(.canvas)
+    }
+
+    private func row<Control: View>(icon: String, title: String, detail: String,
+                                    detailColor: Color = ClaudePalette.muted,
+                                    @ViewBuilder control: () -> Control) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(ClaudePalette.primary)
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(ClaudePalette.surfaceSoft))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(ClaudeTypography.titleSM)
+                    .foregroundStyle(ClaudePalette.ink)
+                Text(detail)
+                    .font(ClaudeTypography.bodySM)
+                    .foregroundStyle(detailColor)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            control()
+        }
     }
 }
 
@@ -244,7 +395,7 @@ private struct DataSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            ClaudeCardHeader(title: "数据备份与恢复", subtitle: "所有记录只保存在本机，JSON 格式，原子写入。")
+            ClaudeCardHeader(title: "数据备份与恢复", subtitle: "所有记录只保存在本机，JSON 格式，原子写入；CSV 便于在 Excel / Numbers 中分析。")
             HStack(spacing: 10) {
                 Image(systemName: "doc.text")
                     .foregroundStyle(ClaudePalette.primary)
@@ -264,10 +415,12 @@ private struct DataSection: View {
             .background(RoundedRectangle(cornerRadius: ClaudeRadius.md, style: .continuous).fill(ClaudePalette.surfaceSoft))
             .overlay(RoundedRectangle(cornerRadius: ClaudeRadius.md, style: .continuous).strokeBorder(ClaudePalette.hairline, lineWidth: 1))
 
-            HStack(spacing: 10) {
+            ClaudeFlowLayout(spacing: 10, lineSpacing: 10) {
                 Button { viewModel.revealDataFileInFinder() } label: { Label("在 Finder 中显示", systemImage: "folder") }
                     .buttonStyle(ClaudeSecondaryButtonStyle())
                 Button { viewModel.exportJSONBackup() } label: { Label("导出 JSON 备份", systemImage: "square.and.arrow.up") }
+                    .buttonStyle(ClaudeSecondaryButtonStyle())
+                Button { viewModel.exportCSVBackup() } label: { Label("导出 CSV 表格", systemImage: "tablecells") }
                     .buttonStyle(ClaudeSecondaryButtonStyle())
                 Button { viewModel.importJSONBackup() } label: { Label("导入恢复 JSON（支持合并或覆盖）", systemImage: "square.and.arrow.down") }
                     .buttonStyle(ClaudeSecondaryButtonStyle())

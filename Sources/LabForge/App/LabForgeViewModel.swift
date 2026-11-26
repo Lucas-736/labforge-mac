@@ -33,6 +33,24 @@ enum WorkbenchTab: String, CaseIterable, Identifiable {
     }
 }
 
+private struct RunningSessionIdentity: Equatable {
+    let id: UUID
+    let start: Date
+
+    init(_ session: LabSession) {
+        id = session.id
+        start = session.startTime
+    }
+}
+
+/// Published after the Mac wakes from a long sleep while a session was running.
+struct SleepRecoveryPrompt: Identifiable, Equatable {
+    let id = UUID()
+    let sleepStart: Date
+    fileprivate let session: RunningSessionIdentity
+    let awaySeconds: TimeInterval
+}
+
 struct ToastMessage: Identifiable, Equatable {
     enum Kind: Equatable { case success, info, error }
     let id = UUID()
@@ -60,12 +78,21 @@ final class LabForgeViewModel {
     private(set) var celebration: CelebrationTrigger?
     private(set) var notificationStatus: NotificationService.Status = .notDetermined
     private(set) var launchStatus: LaunchAtLoginService.Status = .disabled
+    private(set) var isGlobalShortcutRegistered = false
+    private(set) var pendingSleepRecovery: SleepRecoveryPrompt?
+    /// Set by heatmap click-to-backfill; consumed by `HistoryView`.
+    private(set) var pendingBackfillDate: Date?
+    /// Category used by the next check-in when no session is running.
+    private var nextCategory: SessionCategory = .default
 
     // MARK: Non-observed internals
 
     @ObservationIgnored let store: LabPersistenceStore
     @ObservationIgnored private let notificationService = NotificationService()
     @ObservationIgnored private let launchService = LaunchAtLoginService()
+    @ObservationIgnored private let hotKeyService = GlobalHotKeyService()
+    @ObservationIgnored private let soundService = SoundService()
+    @ObservationIgnored private var sleepStart: (date: Date, elapsed: ContinuousClock.Instant, session: RunningSessionIdentity)?
     @ObservationIgnored private var tickTask: Task<Void, Never>?
     @ObservationIgnored private var toastTask: Task<Void, Never>?
     @ObservationIgnored private var pendingSaveTask: Task<Void, Never>?
@@ -104,6 +131,7 @@ final class LabForgeViewModel {
         self.now = start
         self.currentQuote = QuoteLibrary.dailyQuote(for: start)
         self.lastDayKey = CalendarDayHelper.dateKey(for: start)
+        self.nextCategory = data.sessions.max { $0.startTime < $1.startTime }?.category ?? .default
 
         applyAppKitAppearance()
         installObservers()
@@ -121,6 +149,8 @@ final class LabForgeViewModel {
         toastTask?.cancel()
         reminderTask?.cancel()
         notificationStatusTask?.cancel()
+        hotKeyService.shutdown()
+        isGlobalShortcutRegistered = false
         if pendingSaveTask != nil {
             pendingSaveTask?.cancel()
             pendingSaveTask = nil
@@ -181,8 +211,22 @@ final class LabForgeViewModel {
             }
         }
         let workspace = NSWorkspace.shared.notificationCenter
+        observerTokens.append((workspace, workspace.addObserver(forName: NSWorkspace.willSleepNotification,
+                                                                object: nil, queue: .main) { [weak self] _ in
+            // The observer runs on OperationQueue.main; capture the active session before sleep.
+            MainActor.assumeIsolated {
+                guard let self, !self.isShutDown else { return }
+                self.handleWillSleep()
+            }
+        }))
         observerTokens.append((workspace, workspace.addObserver(forName: NSWorkspace.didWakeNotification,
-                                                                object: nil, queue: .main, using: handler)))
+                                                                object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.isShutDown else { return }
+                self.restartTicker()
+                self.handleDidWake()
+            }
+        }))
         let center = NotificationCenter.default
         observerTokens.append((center, center.addObserver(forName: NSApplication.didBecomeActiveNotification,
                                                           object: nil, queue: .main) { [weak self] _ in
@@ -235,16 +279,78 @@ final class LabForgeViewModel {
         return min(todayTotalSeconds / dailyTargetSeconds, 1)
     }
 
-    /// Status-bar title.
+    // MARK: Derived — weekly target & insights
+
+    /// Monday-first weeks (ISO-style), matching Chinese academic convention.
+    var weekCalendar: Calendar {
+        var c = calendar
+        c.firstWeekday = 2
+        c.minimumDaysInFirstWeek = 4
+        return c
+    }
+
+    var weeklyProgress: InsightsEngine.WeeklyProgress {
+        InsightsEngine.weeklyProgress(sessions: data.sessions, weeklyTargetSeconds: data.settings.weeklyTargetSeconds,
+                                      now: now, calendar: weekCalendar)
+    }
+
+    /// Last 28 days.
+    var categoryBreakdown: [InsightsEngine.CategoryBreakdown] {
+        InsightsEngine.categoryBreakdown(sessions: data.sessions, withinLastDays: InsightsEngine.observationWindowDays,
+                                         now: now, calendar: calendar)
+    }
+
+    var allTimeCategoryBreakdown: [InsightsEngine.CategoryBreakdown] {
+        InsightsEngine.categoryBreakdown(sessions: data.sessions, withinLastDays: nil, now: now, calendar: calendar)
+    }
+
+    var recentGoals: [String] {
+        InsightsEngine.recentGoals(sessions: data.sessions, dailyGoals: data.dailyGoals, limit: 5, calendar: calendar)
+    }
+
+    var calmObservations: [InsightsEngine.CalmObservation] {
+        InsightsEngine.calmObservations(sessions: data.sessions, dailyTargetSeconds: data.settings.dailyTargetSeconds,
+                                        weeklyTargetSeconds: data.settings.weeklyTargetSeconds,
+                                        now: now, calendar: weekCalendar)
+    }
+
+    // MARK: Menu bar label
+
+    var menuBarStyle: MenuBarDisplayStyle {
+        get { data.settings.menuBarStyle }
+        set { updateSettings { $0.menuBarStyle = newValue } }
+    }
+
+    /// Status-bar title for the current `menuBarStyle` (empty for `.iconOnly`).
     var menuBarTitle: String {
-        let streakCount = streak.currentStreak
-        if isActive {
-            return "🔥\(streakCount) · \(DurationFormatter.menuBarDuration(todayTotalSeconds))"
+        let duration = DurationFormatter.menuBarDuration(todayTotalSeconds)
+        let checkedInToday = !todaySessions.isEmpty
+        switch data.settings.menuBarStyle {
+        case .full:
+            let streakCount = streak.currentStreak
+            if isActive { return "🔥\(streakCount) · \(duration)" }
+            if checkedInToday { return "🔥\(streakCount) · 今日 \(duration)" }
+            return "LabForge · 待打卡"
+        case .compact:
+            if isActive { return duration }
+            if checkedInToday { return "今日 \(duration)" }
+            return "待打卡"
+        case .iconOnly:
+            return ""
         }
-        if !todaySessions.isEmpty {
-            return "🔥\(streakCount) · 今日 \(DurationFormatter.menuBarDuration(todayTotalSeconds))"
-        }
-        return "LabForge · 待打卡"
+    }
+
+    /// SF Symbol for the icon-only menu bar style.
+    var menuBarSymbol: String {
+        isActive || !todaySessions.isEmpty ? "flame.fill" : "flame"
+    }
+
+    /// VoiceOver description of the menu bar item.
+    var menuBarAccessibilityLabel: String {
+        let duration = DurationFormatter.humanReadable(todayTotalSeconds)
+        if isActive { return "LabForge 实验进行中，今日 \(duration)" }
+        if !todaySessions.isEmpty { return "LabForge 今日已打卡，累计 \(duration)" }
+        return "LabForge 今日待打卡"
     }
 
     /// Warm editorial status line for the popover / hero.
@@ -263,12 +369,62 @@ final class LabForgeViewModel {
     }
 
     var greeting: String {
+        let name = effectiveResearcherName
         switch calendar.component(.hour, from: now) {
-        case 5..<11: return "早上好，研究者"
-        case 11..<14: return "中午好，研究者"
-        case 14..<18: return "下午好，研究者"
-        case 18..<23: return "晚上好，研究者"
-        default: return "夜深了，研究者"
+        case 5..<11: return "早上好，\(name)"
+        case 11..<14: return "中午好，\(name)"
+        case 14..<18: return "下午好，\(name)"
+        case 18..<23: return "晚上好，\(name)"
+        default: return "夜深了，\(name)"
+        }
+    }
+
+    // MARK: Researcher profile (debounced text fields)
+
+    var researcherName: String {
+        get { data.settings.researcherName }
+        set {
+            guard newValue != data.settings.researcherName else { return }
+            data.settings.researcherName = newValue
+            scheduleSave()
+        }
+    }
+
+    var labName: String {
+        get { data.settings.labName }
+        set {
+            guard newValue != data.settings.labName else { return }
+            data.settings.labName = newValue
+            scheduleSave()
+        }
+    }
+
+    var researchFocus: String {
+        get { data.settings.researchFocus }
+        set {
+            guard newValue != data.settings.researchFocus else { return }
+            data.settings.researchFocus = newValue
+            scheduleSave()
+        }
+    }
+
+    var effectiveResearcherName: String { data.settings.effectiveResearcherName }
+    var trimmedLabName: String { data.settings.trimmedLabName }
+    var trimmedResearchFocus: String { data.settings.trimmedResearchFocus }
+
+    // MARK: Session category
+
+    /// The running session's category, or the one the next check-in will use.
+    var activeCategory: SessionCategory {
+        get { data.activeSession?.category ?? nextCategory }
+        set {
+            nextCategory = newValue
+            guard let active = data.activeSession, active.category != newValue,
+                  let i = data.sessions.firstIndex(where: { $0.id == active.id }) else { return }
+            var candidate = data
+            candidate.sessions[i].category = newValue
+            candidate.sessions[i].updatedAt = Date()
+            _ = saveSessionChange(candidate)
         }
     }
 
@@ -284,9 +440,10 @@ final class LabForgeViewModel {
         let goal = (data.dailyGoals[CalendarDayHelper.dateKey(for: start, calendar: calendar)] ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         var candidate = data
-        candidate.sessions.append(LabSession(startTime: start, goal: goal))
+        candidate.sessions.append(LabSession(startTime: start, goal: goal, category: nextCategory))
         guard saveSessionChange(candidate) else { return }
         restartTicker()
+        playChime()
         celebration = CelebrationTrigger(kind: .checkIn)
         show("已进入实验室，计时开始。今天也一起铸造点什么吧。", .success)
     }
@@ -298,7 +455,9 @@ final class LabForgeViewModel {
         candidate.sessions[index].endTime = max(end, active.startTime)
         candidate.sessions[index].updatedAt = end
         guard saveSessionChange(candidate) else { return }
+        nextCategory = active.category
         updateTicker()
+        playChime()
         celebration = CelebrationTrigger(kind: .checkOut)
         show("收工！本次实验 \(DurationFormatter.humanReadable(data.sessions[index].duration(asOf: end)))。", .success)
     }
@@ -361,12 +520,14 @@ final class LabForgeViewModel {
         return nil
     }
 
-    func addManualSession(start: Date, end: Date, goal: String, notes: String) throws {
+    func addManualSession(start: Date, end: Date, goal: String, notes: String,
+                          category: SessionCategory = .default) throws {
         if let error = Self.validate(start: start, end: end) { throw error }
         try store.validateSession(startTime: start, endTime: end)
         let session = LabSession(startTime: start, endTime: end,
                                  goal: goal.trimmingCharacters(in: .whitespacesAndNewlines),
-                                 notes: notes, isManualEntry: true, createdAt: Date(), updatedAt: Date())
+                                 notes: notes, isManualEntry: true, category: category,
+                                 createdAt: Date(), updatedAt: Date())
         var candidate = data
         candidate.sessions.append(session)
         candidate.sessions.sort { $0.startTime < $1.startTime }
@@ -376,7 +537,8 @@ final class LabForgeViewModel {
     }
 
     /// `end == nil` keeps a running session running.
-    func updateSession(id: UUID, start: Date, end: Date?, goal: String, notes: String) throws {
+    func updateSession(id: UUID, start: Date, end: Date?, goal: String, notes: String,
+                       category: SessionCategory? = nil) throws {
         guard let i = data.sessions.firstIndex(where: { $0.id == id }) else { throw SessionEditError.notFound }
         let wasActive = data.sessions[i].isActive
         let resolvedEnd = wasActive ? nil : (end ?? data.sessions[i].endTime)
@@ -387,11 +549,24 @@ final class LabForgeViewModel {
         candidate.sessions[i].endTime = resolvedEnd
         candidate.sessions[i].goal = goal.trimmingCharacters(in: .whitespacesAndNewlines)
         candidate.sessions[i].notes = notes
+        if let category { candidate.sessions[i].category = category }
         candidate.sessions[i].updatedAt = Date()
         candidate.sessions.sort { $0.startTime < $1.startTime }
         try commit(candidate)
         restartTicker()
         show("记录已更新。", .success)
+    }
+
+    /// Heatmap click-to-backfill: opens the manual entry sheet for `date` in History.
+    func requestBackfill(on date: Date) {
+        pendingBackfillDate = calendar.startOfDay(for: date)
+        selectedTab = .history
+    }
+
+    /// Returns and clears the pending backfill day.
+    func consumePendingBackfill() -> Date? {
+        defer { pendingBackfillDate = nil }
+        return pendingBackfillDate
     }
 
     func deleteSession(id: UUID) {
@@ -452,6 +627,7 @@ final class LabForgeViewModel {
         applyAppKitAppearance()
         refreshServiceStatuses()
         if !writesBlocked { syncReminder(showFeedback: false) }
+        syncGlobalShortcut(showFeedback: false)
     }
 
     // MARK: Daily target
@@ -464,6 +640,143 @@ final class LabForgeViewModel {
             data.settings.dailyTargetHours = stepped
             persist()
         }
+    }
+
+    var weeklyTargetHours: Double {
+        get { data.settings.weeklyTargetHours }
+        set {
+            guard newValue.isFinite else { return }
+            let range = LabSettings.weeklyTargetRange
+            let stepped = min(max(newValue.rounded(), range.lowerBound), range.upperBound)
+            guard stepped != data.settings.weeklyTargetHours else { return }
+            updateSettings { $0.weeklyTargetHours = stepped }
+        }
+    }
+
+    // MARK: Sound
+
+    var soundEnabled: Bool {
+        get { data.settings.soundEnabled }
+        set { updateSettings { $0.soundEnabled = newValue } }
+    }
+
+    var soundName: String {
+        get { data.settings.effectiveSoundName }
+        set {
+            guard updateSettings({ $0.soundName = newValue }) else { return }
+            previewSound()
+        }
+    }
+
+    func previewSound() {
+        soundService.play(data.settings.effectiveSoundName)
+    }
+
+    private func playChime() {
+        guard data.settings.soundEnabled else { return }
+        soundService.play(data.settings.effectiveSoundName)
+    }
+
+    // MARK: Global shortcut
+
+    var globalShortcutEnabled: Bool {
+        get { data.settings.globalShortcutEnabled }
+        set {
+            guard newValue != data.settings.globalShortcutEnabled,
+                  updateSettings({ $0.globalShortcutEnabled = newValue }) else { return }
+            syncGlobalShortcut(showFeedback: true)
+        }
+    }
+
+    private func syncGlobalShortcut(showFeedback: Bool) {
+        guard !isShutDown else { return }
+        if data.settings.globalShortcutEnabled {
+            let ok = hotKeyService.register { [weak self] in
+                guard let self, !self.isShutDown else { return }
+                self.toggleCheckIn()
+            }
+            isGlobalShortcutRegistered = ok
+            guard showFeedback else { return }
+            if ok {
+                show("已开启全局快捷键 \(GlobalHotKeyService.shortcutLabel)", .success)
+            } else {
+                show("全局快捷键 \(GlobalHotKeyService.shortcutLabel) 注册失败，可能已被其他应用占用。", .error)
+            }
+        } else {
+            hotKeyService.unregister()
+            isGlobalShortcutRegistered = false
+            if showFeedback { show("已关闭全局快捷键", .info) }
+        }
+    }
+
+    var globalShortcutStatusText: String {
+        if !data.settings.globalShortcutEnabled { return "已关闭 · 开启后可在任意应用中按 \(GlobalHotKeyService.shortcutLabel) 打卡 / 收工" }
+        if isGlobalShortcutRegistered { return "已生效 · 任意应用中按 \(GlobalHotKeyService.shortcutLabel) 打卡 / 收工，无需辅助功能权限" }
+        return "未能注册 \(GlobalHotKeyService.shortcutLabel)，可能与其他应用的快捷键冲突"
+    }
+
+    // MARK: Sleep recovery
+
+    var sleepPromptThresholdMinutes: Int {
+        get { data.settings.sleepPromptThresholdMinutes }
+        set {
+            guard updateSettings({ $0.sleepPromptThresholdMinutes = newValue }) else { return }
+            if !data.settings.sleepPromptEnabled {
+                pendingSleepRecovery = nil
+                sleepStart = nil
+            }
+        }
+    }
+
+    private func handleWillSleep() {
+        sleepStart = nil
+        guard data.settings.sleepPromptEnabled, let active = data.activeSession else { return }
+        let date = Date()
+        guard date > active.startTime else { return }
+        sleepStart = (date, ContinuousClock.now, RunningSessionIdentity(active))
+    }
+
+    private func handleDidWake() {
+        defer { sleepStart = nil }
+        guard let sleepStart, let active = data.activeSession,
+              sleepStart.session == RunningSessionIdentity(active),
+              data.settings.sleepPromptEnabled, now > sleepStart.date else { return }
+        let elapsed = sleepStart.elapsed.duration(to: ContinuousClock.now)
+        guard elapsed >= .seconds(data.settings.sleepPromptThresholdMinutes * 60) else { return }
+        pendingSleepRecovery = SleepRecoveryPrompt(sleepStart: sleepStart.date, session: sleepStart.session,
+                                                   awaySeconds: TimeInterval(elapsed.components.seconds))
+    }
+
+    /// Keeps the full running time (including the sleep).
+    func keepSleepTime() {
+        guard pendingSleepRecovery != nil else { return }
+        pendingSleepRecovery = nil
+        show("已保留全部计时，继续专注。", .info)
+    }
+
+    /// Closes the running session at the moment the Mac went to sleep.
+    func endSessionAtSleepStart() {
+        guard let prompt = pendingSleepRecovery else { return }
+        let end = prompt.sleepStart
+        guard let active = data.activeSession, prompt.session == RunningSessionIdentity(active),
+              let i = data.sessions.firstIndex(where: { $0.id == active.id }),
+              end > active.startTime, end <= Date() else {
+            pendingSleepRecovery = nil
+            show("无法按休眠时刻结束这条记录。", .info)
+            return
+        }
+        var candidate = data
+        candidate.sessions[i].endTime = end
+        candidate.sessions[i].updatedAt = Date()
+        guard saveSessionChange(candidate) else { return }
+        pendingSleepRecovery = nil
+        nextCategory = active.category
+        updateTicker()
+        show("已按休眠时刻 \(Self.timeString(end)) 收工，本次实验 \(DurationFormatter.humanReadable(end.timeIntervalSince(active.startTime)))。", .success)
+    }
+
+    func dismissSleepRecovery() {
+        pendingSleepRecovery = nil
     }
 
     // MARK: Reminder
@@ -608,6 +921,27 @@ final class LabForgeViewModel {
         }
     }
 
+    func exportCSVBackup() {
+        let panel = NSSavePanel()
+        panel.title = "导出 LabForge CSV 表格"
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.canCreateDirectories = true
+        let c = calendar.dateComponents([.year, .month, .day], from: Date())
+        panel.nameFieldStringValue = String(format: "LabForge-记录-%04d-%02d-%02d.csv", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard url.resolvingSymlinksInPath().standardizedFileURL != store.fileURL.resolvingSymlinksInPath().standardizedFileURL else {
+            show("请选择不同于当前数据文件的导出位置。", .error)
+            return
+        }
+        do {
+            let csv = CSVExporter.exportCSVData(sessions: data.sessions, now: Date(), calendar: calendar)
+            try csv.write(to: url, options: .atomic)
+            show("已导出 \(data.sessions.count) 条记录到 \(url.lastPathComponent)。", .success)
+        } catch {
+            show("导出失败：\(error.localizedDescription)", .error)
+        }
+    }
+
     func importJSONBackup() {
         let panel = NSOpenPanel()
         panel.title = "选择 LabForge JSON 备份"
@@ -655,8 +989,13 @@ final class LabForgeViewModel {
         }
         restartTicker()
         if replace {
+            pendingSleepRecovery = nil
+            sleepStart = nil
+            nextCategory = data.activeSession?.category
+                ?? data.sessions.max { $0.startTime < $1.startTime }?.category ?? .default
             applyAppKitAppearance()
             syncReminder(showFeedback: false)
+            syncGlobalShortcut(showFeedback: false)
             refreshServiceStatuses()
             show("已用备份覆盖，共 \(data.sessions.count) 条记录。", .success)
         } else {
@@ -670,6 +1009,7 @@ final class LabForgeViewModel {
         let days = heatmapDays
         let streakSummary = streak
         let rank = rankProgress
+        let week = weeklyProgress
         return ReportCardSnapshot(
             date: now,
             todaySeconds: todayTotalSeconds,
@@ -685,7 +1025,12 @@ final class LabForgeViewModel {
             log: todaySessions.map(\.notes).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.joined(separator: "\n"),
             quote: currentQuote,
             recentLevels: days.suffix(14).map(\.intensityLevel),
-            isActive: isActive
+            isActive: isActive,
+            researcherName: effectiveResearcherName,
+            labName: trimmedLabName,
+            researchFocus: trimmedResearchFocus,
+            weeklySeconds: week.totalSeconds,
+            weeklyTargetSeconds: week.targetSeconds
         )
     }
 
@@ -725,10 +1070,24 @@ final class LabForgeViewModel {
         }
     }
 
+    /// Write-before-mutate settings change for toggles / pickers. Returns `false` if saving failed
+    /// (in which case `data` is left untouched).
+    @discardableResult
+    private func updateSettings(_ mutate: (inout LabSettings) -> Void) -> Bool {
+        var candidate = data
+        mutate(&candidate.settings)
+        guard candidate.settings != data.settings else { return true }
+        return saveSessionChange(candidate)
+    }
+
     private func commit(_ candidate: LabStoreData) throws {
         try save(candidate)
         pendingSaveTask?.cancel()
         pendingSaveTask = nil
+        if data.activeSession.map(RunningSessionIdentity.init) != candidate.activeSession.map(RunningSessionIdentity.init) {
+            pendingSleepRecovery = nil
+            sleepStart = nil
+        }
         data = candidate
     }
 

@@ -6,12 +6,12 @@ import Testing
     @Test func activeAndDuration() {
         let s = session(d(2026, 1, 1, 9), nil)
         #expect(s.isActive)
-        #expect(s.duration(asOf: d(2026, 1, 1, 10, 30)) == 5400)
-        #expect(s.duration(asOf: d(2026, 1, 1, 8)) == 0) // clamped
+        #expect(s.duration(asOf: d(2026, 1, 1, 10, 30)) == 5400.0)
+        #expect(s.duration(asOf: d(2026, 1, 1, 8)) == 0.0) // clamped
         let closed = session(d(2026, 1, 1, 9), d(2026, 1, 1, 9, 45))
         #expect(!closed.isActive)
-        #expect(closed.duration(asOf: d(2030, 1, 1)) == 2700)
-        #expect(session(d(2026, 1, 1, 9), d(2026, 1, 1, 8)).duration() == 0)
+        #expect(closed.duration(asOf: d(2030, 1, 1)) == 2700.0)
+        #expect(session(d(2026, 1, 1, 9), d(2026, 1, 1, 8)).duration() == 0.0)
     }
 }
 
@@ -19,7 +19,7 @@ import Testing
     @Test func defaults() {
         let s = LabSettings()
         #expect(s.appearanceMode == .light)
-        #expect(s.dailyTargetHours == 8)
+        #expect(s.dailyTargetHours == 8.0)
         #expect(!s.reminderEnabled && s.reminderHour == 9 && s.reminderMinute == 0 && !s.launchAtLogin)
         #expect(AppearanceMode.default == .light)
         #expect(AppearanceMode.light.displayName == "Claude 暖浅色")
@@ -28,11 +28,11 @@ import Testing
     }
 
     @Test func clamping() {
-        #expect(LabSettings(dailyTargetHours: 0.2).dailyTargetHours == 1)
-        #expect(LabSettings(dailyTargetHours: 30).dailyTargetHours == 16)
+        #expect(LabSettings(dailyTargetHours: 0.2).dailyTargetHours == 1.0)
+        #expect(LabSettings(dailyTargetHours: 30).dailyTargetHours == 16.0)
         var s = LabSettings()
         s.dailyTargetHours = 100
-        #expect(s.dailyTargetHours == 16)
+        #expect(s.dailyTargetHours == 16.0)
         s.reminderHour = 99
         s.reminderMinute = -5
         #expect(s.reminderHour == 23 && s.reminderMinute == 0)
@@ -42,7 +42,7 @@ import Testing
         let partial = #"{"appearanceMode":"dark","dailyTargetHours":40}"#.data(using: .utf8)!
         let s = try JSONDecoder().decode(LabSettings.self, from: partial)
         #expect(s.appearanceMode == .dark)
-        #expect(s.dailyTargetHours == 16)
+        #expect(s.dailyTargetHours == 16.0)
         #expect(s.reminderHour == 9 && !s.launchAtLogin)
         let bogus = #"{"appearanceMode":"neon"}"#.data(using: .utf8)!
         #expect(try JSONDecoder().decode(LabSettings.self, from: bogus) == LabSettings())
@@ -90,7 +90,7 @@ import Testing
 @Suite struct RankTests {
     @Test func metadata() {
         #expect(ResearchRank.allCases.map(\.title) == ["学术萌新", "烧瓶学徒", "深夜炼丹师", "顶会收割机", "实验室传说"])
-        #expect(ResearchRank.allCases.map(\.minHours) == [0, 20, 80, 200, 500])
+        #expect(ResearchRank.allCases.map(\.minHours) == [0.0, 20.0, 80.0, 200.0, 500.0])
         #expect(ResearchRank.alchemist.englishSubtitle == "Midnight Alchemist")
         #expect(ResearchRank.novice.nextRank == .apprentice)
         #expect(ResearchRank.legend.nextRank == nil)
@@ -110,12 +110,12 @@ import Testing
         #expect(p.currentRank == .apprentice && p.nextRank == .alchemist)
         #expect(abs(p.progressToNext - 0.5) < 1e-9)
         #expect(abs(p.hoursToNextRank - 30) < 1e-9)
-        #expect(p.totalHours == 50)
+        #expect(p.totalHours == 50.0)
 
         let zero = RankEngine.progress(forTotalSeconds: 0)
-        #expect(zero.currentRank == .novice && zero.progressToNext == 0 && zero.hoursToNextRank == 20)
+        #expect(zero.currentRank == .novice && zero.progressToNext == 0.0 && zero.hoursToNextRank == 20.0)
 
         let top = RankEngine.progress(forTotalSeconds: 600 * 3600)
-        #expect(top.currentRank == .legend && top.nextRank == nil && top.progressToNext == 1 && top.hoursToNextRank == 0)
+        #expect(top.currentRank == .legend && top.nextRank == nil && top.progressToNext == 1.0 && top.hoursToNextRank == 0.0)
     }
 }

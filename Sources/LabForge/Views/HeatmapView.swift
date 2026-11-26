@@ -4,6 +4,7 @@ import SwiftUI
 struct HeatmapView: View {
     @Environment(LabForgeViewModel.self) private var viewModel
     @State private var hoveredDayID: String?
+    @State private var lockedDayID: String?
 
     private let cell: CGFloat = 11
     private let gap: CGFloat = 3
@@ -14,7 +15,8 @@ struct HeatmapView: View {
         let streak = viewModel.streak
         let yearSeconds = days.reduce(0) { $0 + $1.totalSeconds }
         let activeDays = days.filter { $0.totalSeconds > 0 }.count
-        let focused = days.first { $0.id == hoveredDayID } ?? days.last
+        let locked = lockedDayID.flatMap { id in days.first { $0.id == id } }
+        let focused = locked ?? days.first { $0.id == hoveredDayID } ?? days.last
 
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -33,7 +35,7 @@ struct HeatmapView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 16) {
-                    ClaudeCardHeader(title: "年度热力图", subtitle: "悬停查看某一天的详情") {
+                    ClaudeCardHeader(title: "年度热力图", subtitle: "悬停预览，点击锁定某一天；再次点击解除锁定") {
                         legend
                     }
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -41,9 +43,13 @@ struct HeatmapView: View {
                             .padding(.vertical, 2)
                     }
                     .defaultScrollAnchor(.trailing)
-                    if let focused { detailBar(focused) }
+                    if let focused { detailBar(focused, isLocked: locked != nil) }
                 }
                 .claudeCard(.canvas, padding: 24)
+
+                observationsSection
+
+                WeeklyRhythmCard()
 
                 recentBars(Array(days.suffix(14)))
             }
@@ -98,19 +104,25 @@ struct HeatmapView: View {
     private func cellView(_ day: HeatmapDay?) -> some View {
         if let day {
             let isHovered = hoveredDayID == day.id
+            let isLocked = lockedDayID == day.id
             let isToday = day.id == viewModel.todayKey
             RoundedRectangle(cornerRadius: 2.5, style: .continuous)
                 .fill(ClaudePalette.heatmap(level: day.intensityLevel))
                 .overlay(
                     RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                        .strokeBorder(isHovered ? ClaudePalette.ink : (isToday ? ClaudePalette.primaryActive : Color.clear),
-                                      lineWidth: isHovered ? 1.5 : 1)
+                        .strokeBorder(isLocked ? ClaudePalette.primaryActive
+                                      : (isHovered ? ClaudePalette.ink : (isToday ? ClaudePalette.primaryActive : Color.clear)),
+                                      lineWidth: isLocked || isHovered ? 1.5 : 1)
                 )
                 .frame(width: cell, height: cell)
                 .contentShape(Rectangle())
                 .onHover { inside in
                     if inside { hoveredDayID = day.id } else if hoveredDayID == day.id { hoveredDayID = nil }
                 }
+                .onTapGesture {
+                    lockedDayID = lockedDayID == day.id ? nil : day.id
+                }
+                .accessibilityAddTraits(.isButton)
                 .help("\(LabForgeViewModel.chineseDate(day.date, weekday: false)) · \(DurationFormatter.humanReadable(day.totalSeconds))")
         } else {
             Color.clear.frame(width: cell, height: cell)
@@ -151,8 +163,19 @@ struct HeatmapView: View {
         }
     }
 
-    private func detailBar(_ day: HeatmapDay) -> some View {
-        HStack(spacing: 16) {
+    private func detailBar(_ day: HeatmapDay, isLocked: Bool) -> some View {
+        HStack(spacing: 14) {
+            if isLocked {
+                Button {
+                    lockedDayID = nil
+                } label: {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(ClaudePalette.primary)
+                }
+                .buttonStyle(.plain)
+                .help("已锁定，点击解除")
+            }
             RoundedRectangle(cornerRadius: 3, style: .continuous)
                 .fill(ClaudePalette.heatmap(level: day.intensityLevel))
                 .frame(width: 14, height: 14)
@@ -171,10 +194,54 @@ struct HeatmapView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)
+            Button {
+                viewModel.requestBackfill(on: day.date)
+            } label: {
+                Label("补卡", systemImage: "plus")
+            }
+            .buttonStyle(ClaudeSecondaryButtonStyle(height: 28, compact: true))
+            .help("为 \(LabForgeViewModel.chineseDate(day.date, weekday: false)) 手动补卡")
         }
-        .padding(.horizontal, 14)
-        .frame(height: 38)
+        .padding(.leading, 14)
+        .padding(.trailing, 6)
+        .frame(height: 40)
         .background(RoundedRectangle(cornerRadius: ClaudeRadius.md, style: .continuous).fill(ClaudePalette.surfaceSoft))
+        .overlay(RoundedRectangle(cornerRadius: ClaudeRadius.md, style: .continuous)
+            .strokeBorder(isLocked ? ClaudePalette.hairline : Color.clear, lineWidth: 1))
+    }
+
+    // MARK: Calm insights
+
+    private var observationsSection: some View {
+        let observations = viewModel.calmObservations
+        return VStack(alignment: .leading, spacing: 14) {
+            ClaudeCardHeader(title: "冷静科研洞察", subtitle: "只陈述事实，不做评判")
+            HStack(alignment: .top, spacing: 14) {
+                ForEach(observations) { observation in
+                    VStack(alignment: .leading, spacing: 10) {
+                        Image(systemName: observation.symbolName)
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundStyle(ClaudePalette.accentForeground)
+                            .frame(width: 30, height: 30)
+                            .background(Circle().fill(ClaudePalette.canvas))
+                            .overlay(Circle().strokeBorder(ClaudePalette.hairline, lineWidth: 1))
+                        Text(observation.title)
+                            .font(ClaudeTypography.serif(17))
+                            .tracking(-0.3)
+                            .foregroundStyle(ClaudePalette.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(observation.detail)
+                            .font(ClaudeTypography.bodySM)
+                            .lineSpacing(2)
+                            .foregroundStyle(ClaudePalette.body)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .claudeCard(.card, padding: 20)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     // MARK: Recent bars
@@ -226,5 +293,108 @@ struct HeatmapView: View {
             }
         }
         .claudeCard(.card, padding: 24)
+    }
+}
+
+// MARK: - Weekly rhythm & category distribution
+
+private struct WeeklyRhythmCard: View {
+    @Environment(LabForgeViewModel.self) private var viewModel
+
+    var body: some View {
+        let week = viewModel.weeklyProgress
+        let breakdown = viewModel.categoryBreakdown
+        VStack(alignment: .leading, spacing: 18) {
+            ClaudeCardHeader(title: "本周节奏与研究分布", subtitle: "周一为一周起点 · 分布统计近 28 天")
+            HStack(alignment: .top, spacing: 28) {
+                weekly(week)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                Rectangle().fill(ClaudePalette.hairline).frame(width: 1)
+                distribution(breakdown)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .claudeCard(.canvas, padding: 24)
+    }
+
+    private func weekly(_ week: InsightsEngine.WeeklyProgress) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("本周已铸").claudeEyebrow()
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(String(format: "%.1f", week.totalSeconds / 3600))
+                    .font(.system(size: 36, weight: .light).monospacedDigit())
+                    .foregroundStyle(ClaudePalette.ink)
+                Text(String(format: "h / 周目标 %.1fh", week.targetSeconds / 3600))
+                    .font(ClaudeTypography.bodySM)
+                    .foregroundStyle(ClaudePalette.muted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            ClaudeProgressBar(value: week.progress)
+            HStack(spacing: 18) {
+                fact(label: "活跃天数", value: "\(week.activeDays) / 7 天")
+                fact(label: "完成度", value: "\(Int((week.progress * 100).rounded()))%")
+                fact(label: "还差", value: week.remainingSeconds > 0 ? DurationFormatter.humanReadable(week.remainingSeconds) : "已达成")
+            }
+            Text(comparison(week))
+                .font(ClaudeTypography.bodySM)
+                .foregroundStyle(ClaudePalette.body)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func comparison(_ week: InsightsEngine.WeeklyProgress) -> String {
+        let previous = week.previousWeekSeconds
+        guard previous > 0 else { return "上周暂无记录。" }
+        let base = "上周全周共 \(DurationFormatter.humanReadable(previous))"
+        let diff = week.totalSeconds - previous
+        if diff >= 60 { return "\(base)，本周已多出 \(DurationFormatter.humanReadable(diff))。" }
+        if diff > -60 { return "\(base)，本周已与之持平。" }
+        return "\(base)，本周距上周总量还差 \(DurationFormatter.humanReadable(-diff))。"
+    }
+
+    private func fact(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(ClaudeTypography.caption)
+                .foregroundStyle(ClaudePalette.mutedSoft)
+            Text(value)
+                .font(ClaudeTypography.number(14, weight: .medium))
+                .foregroundStyle(ClaudePalette.ink)
+                .lineLimit(1)
+        }
+    }
+
+    private func distribution(_ breakdown: [InsightsEngine.CategoryBreakdown]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("近 28 天研究分布").claudeEyebrow()
+            if breakdown.isEmpty {
+                Text("近 28 天还没有记录。打卡时选择分类，这里会显示时间分配。")
+                    .font(ClaudeTypography.bodySM)
+                    .foregroundStyle(ClaudePalette.mutedSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(breakdown) { item in
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 8) {
+                            Image(systemName: item.category.symbolName)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(ClaudePalette.category(item.category))
+                                .frame(width: 16)
+                            Text(item.category.title)
+                                .font(ClaudeTypography.caption)
+                                .foregroundStyle(ClaudePalette.body)
+                            Spacer(minLength: 8)
+                            Text("\(DurationFormatter.humanReadable(item.totalSeconds)) · \(Int((item.percentage * 100).rounded()))%")
+                                .font(ClaudeTypography.number(12))
+                                .foregroundStyle(ClaudePalette.muted)
+                                .lineLimit(1)
+                        }
+                        ClaudeProgressBar(value: item.percentage, height: 6, fill: ClaudePalette.category(item.category))
+                    }
+                }
+            }
+        }
     }
 }

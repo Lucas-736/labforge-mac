@@ -45,7 +45,10 @@ struct MenuBarPopoverView: View {
                 SparkCelebrationView(trigger: viewModel.celebration)
             }
             .claudeCard(.card, padding: 18)
-            .padding(.bottom, 14)
+            .padding(.bottom, 12)
+
+            CategorySelectorStrip(selection: $vm.activeCategory, compact: true)
+                .padding(.bottom, 12)
 
             Button(action: viewModel.toggleCheckIn) {
                 Label(viewModel.isActive ? "结束实验收工" : "进入实验室打卡",
@@ -68,6 +71,15 @@ struct MenuBarPopoverView: View {
                     .foregroundStyle(ClaudePalette.muted)
                 TextField("例如：完成 qPCR 引物验证", text: $vm.todayGoal)
                     .claudeTextField(height: 36)
+                let current = viewModel.todayGoal.trimmingCharacters(in: .whitespacesAndNewlines)
+                let suggestions = Array(viewModel.recentGoals.filter { $0 != current }.prefix(3))
+                if !suggestions.isEmpty && (current.isEmpty || !viewModel.recentGoals.contains(current)) {
+                    ClaudeFlowLayout(spacing: 6, lineSpacing: 6) {
+                        ForEach(suggestions, id: \.self) { goal in
+                            SuggestionPill(text: goal, maxWidth: 140) { vm.todayGoal = goal }
+                        }
+                    }
+                }
             }
             .padding(.bottom, 16)
 
@@ -105,6 +117,14 @@ struct MenuBarPopoverView: View {
                 .help("切换浅色 / 暖炭黑")
 
                 Spacer()
+
+                if viewModel.isGlobalShortcutRegistered {
+                    Text(GlobalHotKeyService.shortcutLabel)
+                        .font(ClaudeTypography.number(11))
+                        .foregroundStyle(ClaudePalette.mutedSoft)
+                        .help("全局快捷键：在任意应用中打卡 / 收工")
+                        .padding(.trailing, 6)
+                }
 
                 Button("退出") { NSApp.terminate(nil) }
                     .buttonStyle(ClaudeTextButtonStyle())

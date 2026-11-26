@@ -9,14 +9,13 @@
 
 ## Highlights ✦
 
-- **菜单栏实时打卡 (MenuBarExtra)** — a live monospaced timer in the menu bar; one click starts or ends a lab session, with the elapsed time always computed from `startTime` (sleep-resilient, zero drift).
-- **Claude Editorial Design System** — the entire UI strictly follows [`DESIGN.md`](./DESIGN.md): the warm cream canvas (`#FAF9F5`) with terracotta coral CTAs (`#CC785C`), serif display headlines, hairline borders and color-block elevation — switchable in one click to the **Warm Charcoal** dark mode (`#181715`).
-- **365 天陶土热图 (terracotta heatmap)** — a year-long research heatmap in the coral→cream palette, with streak and monthly rollups.
-- **5 个科研段位 & 9 枚成就徽章** — Research ranks (from Novice to Legend) and achievement badges that reward first sparks, streaks, early mornings and the eight-hour day.
-- **SwiftUI Canvas 暖色火花动画** — a lightweight Canvas-based spark celebration for check-in moments: warm, whisper-subtle, no neon.
-- **杂志风每日报告卡 (ImageRenderer @2x PNG)** — an editorial daily report card rendered at 2× and exported as a shareable PNG.
-- **手动补录 & 历史编辑 (manual backfill & history editing)** — fix or backfill past sessions; sessions crossing midnight are attributed accurately to each calendar day.
-- **本地优先 (local-first) JSON 备份/恢复** — all records live in a single human-readable JSON file; import/export for backup, no account, no network.
+- **菜单栏打卡** — 一键开始或结束计时，可选完整、极简或纯图标模式。全局快捷键 `⌃⌥⌘L` 无需辅助功能权限。支持可选的 macOS 系统提示音，长时间休眠后可保留完整计时，也可按休眠时刻收工。
+- **研究者档案** — 在侧栏、首页或设置中编辑姓名、实验室与研究方向，用于个人问候和日报署名。填写目标时可复用近期目标。
+- **科研分类与洞察** — 实验炼丹、文献研读、论文写作、代码分析和组会讨论共五类，支持按分类筛选历史记录。可设置周目标，查看近 28 天分类分布、常用时段和周进度。
+- **365 天陶土热图** — 查看连续打卡和月度汇总，点击锁定日期并直接补卡。跨午夜的时长按日统计，历史记录可编辑。
+- **科研段位与成就** — 5 个段位、9 枚成就徽章和打卡火花动画。
+- **Claude Editorial Design System** — 暖奶油画布（`#FAF9F5`）、陶土珊瑚强调色和衬线标题，可切换暖炭黑（`#181715`）。支持导出浅色或深色的 2× PNG 每日报告卡。
+- **本地数据与导出** — 支持 JSON 备份、合并或覆盖恢复，以及适用于电子表格的 UTF‑8 CSV 导出。
 
 ## Architecture 🏛
 
@@ -25,8 +24,8 @@ Pure SwiftPM — zero Xcode dependency:
 ```
 Package.swift (swift-tools-version: 6.0, platforms: [.macOS(.v14)])
 ├── LabForgeCore          — pure Foundation domain layer: Sendable models,
-│                           engines (streak / rank / badge / heatmap / quotes),
-│                           and JSON persistence.
+│                           engines (streak / rank / badge / heatmap / quotes / insights),
+│                           JSON persistence and CSV export.
 ├── LabForge              — SwiftUI + AppKit app: Window + MenuBarExtra,
 │                           Claude Design System, Canvas spark animation,
 │                           ImageRenderer report card, notifications.
@@ -61,7 +60,7 @@ swift build -c release
 ./scripts/build-app.sh                 # build + package (runs tests first)
 ./scripts/build-app.sh --install       # …and install to /Applications/LabForge.app
 ./scripts/build-app.sh --skip-tests    # skip the unit-test stage
-./scripts/build-app.sh --version 1.0.0 --build-number 1
+./scripts/build-app.sh --version 1.1.0 --build-number 2
 ```
 
 The pipeline packages the architecture of the machine running SwiftPM.

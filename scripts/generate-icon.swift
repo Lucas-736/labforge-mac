@@ -61,14 +61,18 @@ func filePrint(_ message: String) {
 
 struct Palette {
     static let space = CGColorSpaceCreateDeviceRGB()
-    static let canvasTop        = CGColor(colorSpace: space, components: [0xFA/255, 0xF9/255, 0xF5/255, 1])!   // #FAF9F5
-    static let canvasBottom     = CGColor(colorSpace: space, components: [0xEF/255, 0xE9/255, 0xDE/255, 1])!   // #EFE9DE
-    static let hairline         = CGColor(colorSpace: space, components: [0xE6/255, 0xDF/255, 0xD8/255, 1])!   // #E6DFD8
-    static let ink              = CGColor(colorSpace: space, components: [0x14/255, 0x14/255, 0x13/255, 1])!   // #141413
-    static let coral            = CGColor(colorSpace: space, components: [0xCC/255, 0x78/255, 0x5C/255, 1])!   // #CC785C
-    static let coralDeep        = CGColor(colorSpace: space, components: [0xA9/255, 0x58/255, 0x3E/255, 1])!   // #A9583E
-    static let amber            = CGColor(colorSpace: space, components: [0xE8/255, 0xA5/255, 0x5A/255, 1])!   // #E8A55A
-    static let shadow           = CGColor(colorSpace: space, components: [0x14/255, 0x14/255, 0x13/255, 0.10])! // warm whisper shadow
+    private static func rgba(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1.0) -> CGColor {
+        CGColor(colorSpace: space, components: [r / 255.0, g / 255.0, b / 255.0, a])!
+    }
+
+    static let canvasTop        = rgba(0xFA, 0xF9, 0xF5)         // #FAF9F5
+    static let canvasBottom     = rgba(0xEF, 0xE9, 0xDE)         // #EFE9DE
+    static let hairline         = rgba(0xE6, 0xDF, 0xD8)         // #E6DFD8
+    static let ink              = rgba(0x14, 0x14, 0x13)         // #141413
+    static let coral            = rgba(0xCC, 0x78, 0x5C)         // #CC785C
+    static let coralDeep        = rgba(0xA9, 0x58, 0x3E)         // #A9583E
+    static let amber            = rgba(0xE8, 0xA5, 0x5A)         // #E8A55A
+    static let shadow           = rgba(0x14, 0x14, 0x13, 0.10)   // warm whisper shadow
 }
 
 // MARK: - Geometry (1024pt design space)
